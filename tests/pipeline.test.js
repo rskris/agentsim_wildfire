@@ -45,3 +45,21 @@ test('policy study runs every scenario', async () => {
   const r = await Study.run(Sim, W, { K: 1, seed: 3 });
   assert.equal(Object.keys(r.scen).length, Study.SCEN.length);
 });
+
+test('custom evacuation zones assign households properly', () => {
+  const { segs } = OV.make();
+  const { bbox } = RW.studyBox(RW.extentOf(segs.features), null, 25), grid = RW.makeGrid(bbox);
+  const box = (w, s, e, n) => [[w, s], [e, s], [e, n], [w, n], [w, s]];
+  const midLat = (bbox.s + bbox.n) / 2;
+  const customZones = [
+    { type: 'Feature', properties: { zone_name: 'Zone North' }, geometry: { type: 'Polygon', coordinates: [box(bbox.w - 0.01, midLat, bbox.e + 0.01, bbox.n + 0.01)] } },
+    { type: 'Feature', properties: { zone_name: 'Zone South' }, geometry: { type: 'Polygon', coordinates: [box(bbox.w - 0.01, bbox.s - 0.01, bbox.e + 0.01, midLat)] } }
+  ];
+  assert.equal(RW.kindOf(customZones), 'zones');
+  const world = RW.build(RW.fromOverture(segs.features), grid, M.elev, { Sim, zones: customZones });
+  const ids = world.zones.map(z => z.id);
+  assert.ok(ids.includes('Zone North'));
+  assert.ok(ids.includes('Zone South'));
+  assert.ok(world.homes.every(h => h.zone >= 0 && h.zone < world.zones.length));
+});
+

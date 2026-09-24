@@ -45,7 +45,7 @@ TYPES = {"segment": "segments.geojson", "building": "buildings.geojson",
 
 
 def cmd_for(bbox, otype, out):
-    return ["overturemaps", "download",
+    return ["overturemaps", "download", "--no-stac",
             "--bbox=" + ",".join(str(v) for v in bbox),
             "-f", "geojson", "--type=" + otype, "-o", out]
 

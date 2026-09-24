@@ -195,6 +195,12 @@ overturemaps download --bbox=-119.78,34.39,-119.56,34.51 \
             </div>
           </div>
         </div>
+        <div class="scrubwrap" id="scrubwrap" style="display:flex;align-items:center;gap:10px;margin:10px 2px 4px">
+          <button class="btn" id="scrubLive" style="padding:4px 9px;font-size:12px;line-height:1">Live</button>
+          <span id="scrubTime" style="font-variant-numeric:tabular-nums;font-size:13px;font-weight:500;min-width:48px">T+0:00</span>
+          <input type="range" id="timeline" min="0" max="0" value="0" step="1" style="flex:1" disabled>
+          <span id="scrubMax" style="font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted);min-width:48px;text-align:right">T+0:00</span>
+        </div>
         <div class="legend" id="legend"></div>
         <div class="warn" id="warn" hidden></div>
         <div class="status" id="status">Hover over the map to inspect a location.</div>
@@ -294,6 +300,10 @@ overturemaps download --bbox=-119.78,34.39,-119.56,34.51 \
         <div class="tablewrap"><table class="small"><thead><tr><th>Road</th><th class="n">Vehicle-minutes stuck in queues</th><th style="width:28%"></th></tr></thead><tbody id="bnBody"></tbody></table></div>
       </div>
     </div>
+    <div class="btns" style="margin-top:14px">
+      <button class="btn" id="exportRisk" disabled>Export parcel risk (GeoJSON)</button>
+      <button class="btn" id="exportBottlenecks" disabled>Export bottlenecks (CSV)</button>
+    </div>
   </section>
 
   <div class="panel cmp">
@@ -328,6 +338,9 @@ overturemaps download --bbox=-119.78,34.39,-119.56,34.51 \
       </div>
       <div class="findings" id="findings"></div>
       <div class="caveat" id="caveat"></div>
+      <div class="btns" style="margin-top:14px">
+        <button class="btn" id="exportStudy" disabled>Export scenario results (CSV)</button>
+      </div>
     </div>
   </section>
 
@@ -337,7 +350,7 @@ overturemaps download --bbox=-119.78,34.39,-119.56,34.51 \
   </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script>
+<script id="sim-script">
 const Sim = (function () {
   let W = 160, H = 100; const CELL = 50, DT = 10, BS = 4; let BW = W / BS, BH = H / BS;
   function setDims(w, h) { W = w; H = h; BW = w / BS; BH = h / BS; }
@@ -834,7 +847,7 @@ const Sim = (function () {
 if (typeof module !== 'undefined') module.exports = Sim;
 
 </script>
-<script>
+<script id="rw-script">
 const RealWorld = (function () {
   const CELL = 50, BS = 4, DT = 10;
   const DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
@@ -1088,14 +1101,46 @@ const RealWorld = (function () {
     for (const n of nodes) { n.local = n.out.some(id => edges[id].type !== 'hwy') || n.inn.some(id => edges[id].type !== 'hwy'); }
     for (const h of homes) h.spur = nodes[h.node].nb.size === 1;
 
-    // zones: 2 km grid
-    const ZS = 40, zmap = new Map(), zones = [];
-    for (const h of homes) {
-      const r = Math.floor(h.y / ZS), q = Math.floor(h.x / ZS), key = r + ',' + q;
-      if (!zmap.has(key)) { zmap.set(key, zones.length); zones.push({ id: String.fromCharCode(65 + r) + (q + 1), r, q, n: 0, wui: 0, sx: 0, sy: 0 }); }
-      const z = zmap.get(key); h.zone = z; const Z = zones[z]; Z.n++; Z.sx += h.fx; Z.sy += h.fy; if (lu[h.c] === LU.WUI || lu[h.c] === LU.CHAP) Z.wui++;
+    // zones: custom polygons if provided, otherwise 2 km grid
+    const zones = [];
+    if (opts.zones && opts.zones.length) {
+      const zR = new Int16Array(N).fill(0);
+      const zfeats = opts.zones;
+      for (let i = 0; i < zfeats.length; i++) {
+        const p = zfeats[i].properties || {};
+        const zid = p.id || p.zone_id || p.zone || p.name || p.zone_name || p.ZONE || ('Zone ' + (i + 1));
+        zones.push({ id: String(zid), n: 0, wui: 0, sx: 0, sy: 0, r: 0, q: i });
+      }
+      rasterize(zfeats, grid, W, H, (p, fi) => (fi + 1), zR);
+      let outsideZone = -1;
+      for (const h of homes) {
+        let z = zR[h.c] - 1;
+        if (z < 0 || z >= zones.length) {
+          if (outsideZone < 0) {
+            outsideZone = zones.length;
+            zones.push({ id: 'Other', n: 0, wui: 0, sx: 0, sy: 0, r: 0, q: outsideZone });
+          }
+          z = outsideZone;
+        }
+        h.zone = z;
+        const Z = zones[z];
+        Z.n++; Z.sx += h.fx; Z.sy += h.fy;
+        if (lu[h.c] === LU.WUI || lu[h.c] === LU.CHAP) Z.wui++;
+      }
+      for (const z of zones) {
+        z.foot = z.n > 0 ? (z.wui / z.n > 0.5) : false;
+        z.cx = z.n > 0 ? (z.sx / z.n) : (W / 2);
+        z.cy = z.n > 0 ? (z.sy / z.n) : (H / 2);
+      }
+    } else {
+      const ZS = 40, zmap = new Map();
+      for (const h of homes) {
+        const r = Math.floor(h.y / ZS), q = Math.floor(h.x / ZS), key = r + ',' + q;
+        if (!zmap.has(key)) { zmap.set(key, zones.length); zones.push({ id: String.fromCharCode(65 + r) + (q + 1), r, q, n: 0, wui: 0, sx: 0, sy: 0 }); }
+        const z = zmap.get(key); h.zone = z; const Z = zones[z]; Z.n++; Z.sx += h.fx; Z.sy += h.fy; if (lu[h.c] === LU.WUI || lu[h.c] === LU.CHAP) Z.wui++;
+      }
+      for (const z of zones) { z.foot = z.wui / z.n > 0.5; z.cx = z.sx / z.n; z.cy = z.sy / z.n; }
     }
-    for (const z of zones) { z.foot = z.wui / z.n > 0.5; z.cx = z.sx / z.n; z.cy = z.sy / z.n; }
 
     // derived indexes
     const cellHomes = {};
@@ -1186,7 +1231,7 @@ const RealWorld = (function () {
     return (e - w) * 92000 * (n - s) * 110540;
   }
   function kindOf(features) {
-    let seg = 0, poly = 0, pt = 0, lc = 0, luT = 0, bT = 0, bHint = 0; const areas = [];
+    let seg = 0, poly = 0, pt = 0, lc = 0, luT = 0, bT = 0, bHint = 0, zT = 0; const areas = [];
     for (const f of features.slice(0, 800)) {
       const g = f.geometry && f.geometry.type, p = f.properties || {};
       if ((g === 'LineString' || g === 'MultiLineString') && (p.subtype === 'road' || p.class || p.highway)) seg++;
@@ -1196,10 +1241,12 @@ const RealWorld = (function () {
         if (p.type === 'land_use') luT++;
         if (p.type === 'building') bT++;
         if (BLD_HINT.some(k => p[k] != null)) bHint++;
+        if (p.evac_zone || p.zone_id || p.zone_name || p.ZONE || p.Zone || (p.zone && !p.class && !p.subtype)) zT++;
       } else if (g === 'Point') pt++;
     }
     if (seg && seg >= poly && seg >= pt) return 'segments';
     if (poly && poly >= pt) {
+      if (zT > poly * 0.4) return 'zones';
       if (lc > poly * 0.6) return 'landcover';
       if (luT > poly * 0.6) return 'landuse';
       if (bT > poly * 0.6 || bHint > poly * 0.2) return 'buildings';
@@ -1214,12 +1261,13 @@ const RealWorld = (function () {
     let best = null; for (const f of features) { const z = zoomOf(f); if (z != null && (best == null || z > best)) best = z; }
     return best == null ? features : features.filter(f => { const z = zoomOf(f); return z == null || z === best; });
   }
-  // Scanline fill of polygon features onto the grid; valueFn(props) returns a code > 0 or 0 to skip
+  // Scanline fill of polygon features onto the grid; valueFn(props, index) returns a code > 0 or 0 to skip
   function rasterize(features, grid, W, H, valueFn, target) {
     let n = 0;
-    for (const f of features) {
+    for (let fi = 0; fi < features.length; fi++) {
+      const f = features[fi];
       const g = f.geometry; if (!g) continue;
-      const v = valueFn(f.properties || {}); if (!v) continue;
+      const v = valueFn(f.properties || {}, fi); if (!v) continue;
       const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
       for (const poly of polys) {
         const rings = poly.map(r => r.map(([lon, lat]) => grid.toGrid(lat, lon)));
@@ -1323,7 +1371,7 @@ const RealWorld = (function () {
 if (typeof module !== 'undefined') module.exports = RealWorld;
 
 </script>
-<script>
+<script id="study-script">
 const Study = (function () {
   const SCEN = [
     ['base', 'Baseline: afternoon, zones within 1.5 km, 10 min to issue', {}],
@@ -1428,7 +1476,7 @@ sizeOv(); map.on('resize', sizeOv);
 map.on('zoomstart', ()=>ov.style.opacity=0); map.on('zoomend', ()=>ov.style.opacity=1);
 
 // ---------- intake ----------
-const store = { segments:[], buildings:[], landcover:[], landuse:[], osm:null, files:[] };
+const store = { segments:[], buildings:[], landcover:[], landuse:[], zones:[], osm:null, files:[] };
 function step(id, cls){ $(id).className=cls; }
 function renderFiles(){
   $('filelist').innerHTML = store.files.map(f=>`<li class="${f.ok?'':'bad'}"><span>${f.name}</span><span>${f.msg}</span></li>`).join('');
@@ -1446,8 +1494,9 @@ async function addFiles(list){
         else if (k==='buildings'){ store.buildings.push(...parsed.features); rec.ok=true; rec.msg=`${parsed.features.length.toLocaleString()} building footprints`; }
         else if (k==='landcover'){ store.landcover.push(...parsed.features); rec.ok=true; rec.msg=`${parsed.features.length.toLocaleString()} land cover areas`; }
         else if (k==='landuse'){ store.landuse.push(...parsed.features); rec.ok=true; rec.msg=`${parsed.features.length.toLocaleString()} land use areas`; }
+        else if (k==='zones' || /zone/i.test(f.name)){ store.zones.push(...parsed.features); rec.ok=true; rec.msg=`${parsed.features.length.toLocaleString()} evacuation zone boundaries`; }
         else if (k==='points'){ rec.ok=true; rec.msg='Points, not needed (connectors are optional)'; }
-        else rec.msg='No roads or buildings found in this file';
+        else rec.msg='No recognized features found in this file';
       }
     } catch(e){ rec.msg = /JSON|token/i.test(e.message) ? 'Not a GeoJSON, GeoJSONSeq or OSM file' : "Couldn't read it: " + e.message; }
     renderFiles();
@@ -1506,7 +1555,7 @@ $('build').onclick = async () => {
   await new Promise(r=>setTimeout(r,30));
   try {
     grid = RW.makeGrid(BBOX);
-    world = RW.build(osm, grid, elevFn, { Sim:S, homeSpacing:75, buildings:B, maxAgents:12000, landcover:store.landcover, landuse:store.landuse });
+    world = RW.build(osm, grid, elevFn, { Sim:S, homeSpacing:75, buildings:B, maxAgents:12000, landcover:store.landcover, landuse:store.landuse, zones:store.zones });
     if (!world.homes.length) throw new Error('no households could be placed; check that the files cover the same area');
     if (!world.nodes.some(n=>n.exit)) throw new Error('no roads leave the area, so there are no evacuation exits');
   } catch(e){ step('st-build','err'); $('loadNote').textContent="Couldn't build the model: "+e.message+'.'; $('back').hidden=false; return; }
@@ -1515,11 +1564,12 @@ $('build').onclick = async () => {
   buildStatic();
   P.ign = defaultIgnition();
   $('loading').style.display='none';
-  ['play','finish','reset','randIgn','ens','runStudy'].forEach(id=>$(id).disabled=false);
+  ['play','finish','reset','randIgn','ens','runStudy','exportRisk','exportBottlenecks'].forEach(id=>$(id).disabled=false);
   const st=world.stats, w=world.agentWeight;
   $('status').textContent = world.homeSource==='buildings'
     ? `Built a network of ${st.nodes.toLocaleString()} intersections from ${st.ways.toLocaleString()} road segments, with ${st.households.toLocaleString()} homes from building footprints in ${st.zones} zones and ${st.exits} exits.` + (w>1.05?` Each simulated household stands for about ${r1(w)} homes.`:'')
     : `Built a network of ${st.nodes.toLocaleString()} intersections from ${st.ways.toLocaleString()} road segments, with ${st.homes.toLocaleString()} households placed along residential streets in ${st.zones} zones and ${st.exits} exits.`;
+  if (store.zones.length) $('status').textContent += ` Using ${world.zones.length} custom evacuation zone boundaries.`;
   const cov = world.stats.landcoverShare;
   $('status').textContent += cov > 0.05 ? ` Fuels come from Overture land cover (${pct(cov)} of the area)${world.stats.landuseCells?', refined with land use':''}.` : ' Fuels are inferred from terrain and building density; add Overture land cover for a better fuel map.';
   if (store.landcover.length && cov < 0.05){ $('warn').hidden=false; $('warn').textContent="The land cover file doesn't overlap the study area, so fuels were inferred from terrain and building density instead."; }
@@ -1559,10 +1609,58 @@ function buildStatic(){
 }
 
 // ---------- run control ----------
+let history = [], isScrubbing = false, scrubIndex = 0;
+function saveSnapshot(){
+  if (!R) return;
+  const c = S.counts(R);
+  const snap = {
+    t: R.t,
+    fire: new Uint8Array(R.fire),
+    burnLeft: new Uint16Array(R.burnLeft),
+    st: new Uint8Array(R.st),
+    eburn: new Uint16Array(R.eburn),
+    zoneAlert: new Int32Array(R.zoneAlert),
+    active: Array.from(R.active),
+    eq: R.active.size ? Array.from(R.active).map(eid => ({ eid, q: R.eq[eid].slice(), len: R.eq[eid].length })) : [],
+    counts: c
+  };
+  history.push(snap);
+  $('timeline').disabled = false;
+  $('timeline').max = history.length - 1;
+  if (!isScrubbing){
+    $('timeline').value = history.length - 1;
+    $('scrubTime').textContent = 'T+' + fmtT(R.t);
+  }
+  $('scrubMax').textContent = 'T+' + fmtT(R.t);
+}
+function scrubTo(idx){
+  if (idx < 0 || idx >= history.length) return;
+  isScrubbing = (idx < history.length - 1);
+  scrubIndex = idx;
+  if (isScrubbing && playing){
+    playing = false;
+    $('play').textContent = 'Resume';
+  }
+  const snap = history[idx];
+  $('scrubTime').textContent = 'T+' + fmtT(snap.t);
+  $('clock').textContent = 'T+' + fmtT(snap.t);
+  $('k-safe').textContent = snap.counts.safe.toLocaleString();
+  $('k-road').textContent = snap.counts.onroad.toLocaleString();
+  $('k-prep').textContent = snap.counts.preparing.toLocaleString();
+  $('k-risk').textContent = snap.counts.atrisk;
+  $('k-trap').textContent = snap.counts.trapped;
+  $('scrubLive').className = isScrubbing ? 'btn' : 'btn primary';
+  draw();
+}
 function resetRun(){
   if (!world) return;
   R = S.newRun(world, P); playing=false; started=false; logged=false;
+  history = []; isScrubbing = false; scrubIndex = 0;
   $('play').textContent='Start';
+  $('timeline').disabled = true; $('timeline').max = 0; $('timeline').value = 0;
+  $('scrubTime').textContent = 'T+0:00'; $('scrubMax').textContent = 'T+0:00';
+  $('scrubLive').className = 'btn primary';
+  saveSnapshot();
   renderAlerts(); updateTallies(); drawChart(); renderResults(); windBadge();
 }
 function describe(){
@@ -1639,20 +1737,29 @@ function draw(){
   // raster layers in grid space
   ctx.setTransform(d*T.ax, d*T.ay, d*T.bx, d*T.by, d*T.ox, d*T.oy);
   if (layer==='fuel'){ ctx.imageSmoothingEnabled=false; ctx.drawImage(fuelCv,0,0); }
-  const fd=fireImg.data, fire=R.fire;
+  const curSnap = (isScrubbing && history[scrubIndex]) ? history[scrubIndex] : null;
+  const fire = curSnap ? curSnap.fire : R.fire;
+  const burnLeft = curSnap ? curSnap.burnLeft : R.burnLeft;
+  const activeEids = curSnap ? curSnap.active : Array.from(R.active);
+  const eburn = curSnap ? curSnap.eburn : R.eburn;
+  const st = curSnap ? curSnap.st : R.st;
+  const za = curSnap ? curSnap.zoneAlert : R.zoneAlert;
+  const curT = curSnap ? curSnap.t : R.t;
+  const eqMap = curSnap ? new Map(curSnap.eq.map(x=>[x.eid, x])) : null;
+  const fd=fireImg.data;
   for (let c=0;c<fire.length;c++){
     const i=c*4, s=fire[c];
     if (!s){ fd[i+3]=0; continue; }
     if (s===2){ fd[i]=45; fd[i+1]=35; fd[i+2]=30; fd[i+3]=175; }
-    else if ((R.burnLeft[c]+frame)%6<3){ fd[i]=255; fd[i+1]=90; fd[i+2]=31; fd[i+3]=235; } else { fd[i]=255; fd[i+1]=176; fd[i+2]=32; fd[i+3]=235; }
+    else if (((burnLeft ? burnLeft[c] : 0)+frame)%6<3){ fd[i]=255; fd[i+1]=90; fd[i+2]=31; fd[i+3]=235; } else { fd[i]=255; fd[i+1]=176; fd[i+2]=32; fd[i+3]=235; }
   }
   fireCtx.putImageData(fireImg,0,0); ctx.imageSmoothingEnabled=false; ctx.drawImage(fireCv,0,0);
   if (layer==='smoke'||layer==='info'||layer==='cong'){
     const fdd=fieldImg.data, n=world.BW*world.BH; let cong=null;
-    if (layer==='cong'){ cong=new Float32Array(n); for (const eid of R.active){ const e=world.edges[eid], q=R.eq[eid].length; if(q){ const b=((e.my|0)>>2)*world.BW+((e.mx|0)>>2); if (b>=0&&b<n) cong[b]+=q; } } }
+    if (layer==='cong'){ cong=new Float32Array(n); for (const eid of activeEids){ const e=world.edges[eid], q=(eqMap ? eqMap.get(eid)?.len : R.eq[eid].length) || 0; if(q){ const b=((e.my|0)>>2)*world.BW+((e.mx|0)>>2); if (b>=0&&b<n) cong[b]+=q; } } }
     for (let b=0;b<n;b++){
       let a=0, col;
-      if (layer==='smoke'){ a=Math.min(.62,R.smoke[b]/14); col=[70,62,88]; } else if (layer==='info'){ a=Math.min(.6,R.info[b]/2.5); col=[11,122,117]; } else { a=Math.min(.65,cong[b]/12); col=[201,42,42]; }
+      if (layer==='smoke'){ a=Math.min(.62,R.smoke[b]/14); col=[70,62,88]; } else if (layer==='info'){ a=Math.min(.6,R.info[b]/2.5); col=[11,122,117]; } else { a=Math.min(.65,(cong?cong[b]:0)/12); col=[201,42,42]; }
       fdd[b*4]=col[0]; fdd[b*4+1]=col[1]; fdd[b*4+2]=col[2]; fdd[b*4+3]=a>0.02?a*255:0;
     }
     fieldCtx.putImageData(fieldImg,0,0); ctx.imageSmoothingEnabled=true; ctx.drawImage(fieldCv,0,0,world.W,world.H);
@@ -1661,26 +1768,26 @@ function draw(){
   // congested and closed roads
   ctx.lineCap='round'; ctx.lineJoin='round';
   const drawEdge=(e)=>{ ctx.beginPath(); e.pts.forEach((p,i)=>{ const [x,y]=px(p[0],p[1]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); };
-  for (const eid of R.active){
-    const e=world.edges[eid], ratio=R.eq[eid].length/R.estore[eid]; if (ratio<0.05) continue;
+  for (const eid of activeEids){
+    const e=world.edges[eid], qLen=(eqMap ? eqMap.get(eid)?.len : R.eq[eid].length) || 0, ratio=qLen/R.estore[eid]; if (ratio<0.05) continue;
     ctx.lineWidth=Math.max(2,Math.min(6,cellPx*0.9)); ctx.strokeStyle= ratio>0.66?'#C92A2A': ratio>0.33?'#F08C00':'#E8B84A'; drawEdge(e);
   }
   ctx.setLineDash([4,3]); ctx.strokeStyle='#B00020'; ctx.lineWidth=Math.max(2,Math.min(5,cellPx*0.8));
-  for (let i=0;i<world.edges.length;i++) if (R.eburn[i]>0) drawEdge(world.edges[i]);
+  for (let i=0;i<world.edges.length;i++) if (eburn[i]>0) drawEdge(world.edges[i]);
   ctx.setLineDash([]);
   // homes
   const hs=Math.max(1.6,Math.min(4.5,cellPx*0.6));
   for (const h of world.homes){
-    ctx.fillStyle = layer==='risk' ? (risk? riskColor(risk[h.id]/riskRuns):'#8A979E') : HC[R.st[h.id]];
+    ctx.fillStyle = layer==='risk' ? (risk? riskColor(risk[h.id]/riskRuns):'#8A979E') : HC[st[h.id]];
     const [x,y]=px(h.fx,h.fy); ctx.fillRect(x-hs/2,y-hs/2,hs,hs);
   }
   // vehicles
   const vr=Math.max(1.4,Math.min(3,cellPx*0.35));
   ctx.fillStyle='#FFFFFF'; ctx.strokeStyle='#14222D'; ctx.lineWidth=0.7;
-  for (const eid of R.active){
-    const e=world.edges[eid], q=R.eq[eid]; let lim=e.len;
+  for (const eid of activeEids){
+    const e=world.edges[eid], q=eqMap ? (eqMap.get(eid)?.q || []) : R.eq[eid]; let lim=e.len;
     for (let i=0;i<q.length;i++){
-      const a=q[i], start=R.exitT[a]-e.tt; let s=Math.min(1,Math.max(0,(R.t-start)/e.tt))*e.len; s=Math.min(s,lim); lim=s-12.75/Math.max(1,e.lanes);
+      const a=q[i], start=R.exitT[a]-e.tt; let s=Math.min(1,Math.max(0,(curT-start)/e.tt))*e.len; s=Math.min(s,lim); lim=s-12.75/Math.max(1,e.lanes);
       const [gx,gy,dx,dy]=edgePoint(e,Math.max(0,s)), l=Math.hypot(dx,dy)||1, off=0.35;
       const [x,y]=px(gx+dy/l*off, gy-dx/l*off);
       ctx.beginPath(); ctx.arc(x,y,vr,0,7); ctx.fill(); ctx.stroke();
@@ -1691,7 +1798,7 @@ function draw(){
     ctx.font='600 12px "Barlow Condensed","Arial Narrow",sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
     world.zones.forEach((z,i)=>{
       if (z.n<15) return;
-      const alerted=R.zoneAlert[i]>=0 && R.t>=R.zoneAlert[i]; const [x,y]=px(z.cx,z.cy);
+      const alerted=za[i]>=0 && curT>=za[i]; const [x,y]=px(z.cx,z.cy);
       ctx.fillStyle=alerted?'rgba(103,65,217,.95)':'rgba(255,255,255,.8)'; ctx.beginPath(); ctx.roundRect(x-13,y-8,26,16,4); ctx.fill();
       ctx.fillStyle=alerted?'#fff':'#2B3A42'; ctx.fillText(z.id,x,y+1);
     });
@@ -1746,20 +1853,31 @@ function tick(){
   frame++;
   if (world && R && playing && !R.done && !busy){
     const sp=speeds[+$('speed').value];
-    if (frame%sp.every===0) for (let i=0;i<sp.per && !R.done;i++) S.step(R);
+    if (frame%sp.every===0) for (let i=0;i<sp.per && !R.done;i++) {
+      S.step(R);
+      if (R.t % 6 === 0) saveSnapshot();
+    }
     if (frame%8===0){ updateTallies(); drawChart(); renderAlerts(); renderResults(); }
     if (R.done) finishRun();
   }
   draw(); requestAnimationFrame(tick);
 }
-function finishRun(){ playing=false; $('play').textContent='Finished'; updateTallies(); drawChart(); renderAlerts(); renderResults(); logRun(); }
+function finishRun(){ playing=false; $('play').textContent='Finished'; saveSnapshot(); updateTallies(); drawChart(); renderAlerts(); renderResults(); logRun(); }
 
 // ---------- controls ----------
 function setPressed(on,off){ $(on).setAttribute('aria-pressed','true'); $(off).setAttribute('aria-pressed','false'); }
 const changed=()=>resetRun();
 $('play').onclick=()=>{ if (R.done) resetRun(); playing=!playing; started=true; $('play').textContent=playing?'Pause':'Resume'; };
-$('finish').onclick=()=>{ started=true; while(!R.done) S.step(R); finishRun(); };
+$('finish').onclick=()=>{ started=true; while(!R.done) { S.step(R); if (R.t % 6 === 0) saveSnapshot(); } finishRun(); };
 $('reset').onclick=resetRun;
+$('timeline').oninput=e=>scrubTo(+e.target.value);
+$('scrubLive').onclick=()=>{
+  if (history.length){
+    isScrubbing = false;
+    $('timeline').value = history.length - 1;
+    scrubTo(history.length - 1);
+  }
+};
 $('speed').oninput=e=>{ $('speedOut').textContent=speeds[+e.target.value].n; };
 $('wind').onchange=e=>{ P.windFrom=+e.target.value; changed(); };
 $('ws').oninput=e=>{ P.windKmh=+e.target.value; $('wsOut').textContent=P.windKmh+' km/h'; }; $('ws').onchange=changed;
@@ -1801,19 +1919,82 @@ map.on('mousemove', ev=>{
   $('status').textContent=s+'.';
 });
 
+function getStudyWorker(){
+  if (typeof Worker === 'undefined') return null;
+  try {
+    const simEl = $('sim-script'), studyEl = $('study-script');
+    if (!simEl || !studyEl) return null;
+    const workerScript = `
+      ${simEl.textContent}
+      ${studyEl.textContent}
+      self.onmessage = async function(e) {
+        const { type, world, opts, P } = e.data;
+        if (type === 'study') {
+          try {
+            const res = await Study.run(Sim, world, {
+              K: opts.K,
+              seed: opts.seed,
+              progress: (i, n) => self.postMessage({ type: 'progress', i, n })
+            });
+            self.postMessage({ type: 'done', res });
+          } catch(err) {
+            self.postMessage({ type: 'error', message: err.message });
+          }
+        } else if (type === 'ensemble') {
+          try {
+            const K = opts.K, acc = new Uint16Array(world.homes.length), rng = Sim.mulberry32(opts.seed || 12345);
+            for (let i = 0; i < K; i++) {
+              const ign = Sim.randomIgnition(world, rng);
+              const Rr = Sim.newRun(world, Object.assign({}, P, { ign, seed: (rng() * 1e6) | 0 }));
+              Sim.runToEnd(Rr);
+              for (let h = 0; h < acc.length; h++) if (Rr.st[h] === Sim.ST.ATRISK || Rr.st[h] === Sim.ST.TRAPPED) acc[h]++;
+              self.postMessage({ type: 'progress', i: i + 1, n: K });
+            }
+            self.postMessage({ type: 'done', acc });
+          } catch(err) {
+            self.postMessage({ type: 'error', message: err.message });
+          }
+        }
+      };
+    `;
+    const blob = new Blob([workerScript], { type: 'application/javascript' });
+    return new Worker(URL.createObjectURL(blob));
+  } catch(e) { return null; }
+}
+
 $('ens').onclick=()=>{
-  if (busy) return; busy=true; const btn=$('ens'); btn.disabled=true; const K=10; let i=0;
-  const acc=new Uint16Array(world.homes.length), rng=S.mulberry32(Date.now()&0xffff);
-  function one(){
-    const Rr=S.newRun(world,Object.assign({},P,{ign:S.randomIgnition(world,rng),seed:(rng()*1e6)|0})); S.runToEnd(Rr);
-    for (let h=0;h<acc.length;h++) if (Rr.st[h]===S.ST.ATRISK||Rr.st[h]===S.ST.TRAPPED) acc[h]++;
-    i++; $('ensNote').textContent=`Running fire ${i} of ${K}…`;
-    if (i<K) setTimeout(one,0);
-    else { risk=acc; riskRuns=K; btn.disabled=false; busy=false; let hi=0; for (const v of acc) if (v/K>=0.1) hi++;
-      $('ensNote').textContent=`Done. ${hi.toLocaleString()} of ${acc.length.toLocaleString()} simulated households didn't get out in at least 10% of the ${K} fires under these settings. Hover a home for its count.`;
-      $('layer').value='risk'; legend(); renderParcel(); }
+  if (busy) return; busy=true; const btn=$('ens'); btn.disabled=true; const K=10, seed=Date.now()&0xffff;
+  const worker = getStudyWorker();
+  if (worker) {
+    worker.onmessage = e => {
+      if (e.data.type === 'progress') {
+        $('ensNote').textContent = `Running fire ${e.data.i} of ${e.data.n}…`;
+      } else if (e.data.type === 'done') {
+        risk = e.data.acc; riskRuns = K; btn.disabled = false; busy = false; worker.terminate();
+        let hi = 0; for (const v of risk) if (v / K >= 0.1) hi++;
+        $('ensNote').textContent = `Done. ${hi.toLocaleString()} of ${risk.length.toLocaleString()} simulated households didn't get out in at least 10% of the ${K} fires under these settings. Hover a home for its count.`;
+        $('layer').value = 'risk'; legend(); renderParcel();
+        $('exportRisk').disabled = false;
+      } else if (e.data.type === 'error') {
+        $('ensNote').textContent = 'Ensemble stopped: ' + e.data.message;
+        btn.disabled = false; busy = false; worker.terminate();
+      }
+    };
+    worker.postMessage({ type: 'ensemble', world, opts: { K, seed }, P });
+  } else {
+    let i = 0; const acc = new Uint16Array(world.homes.length), rng = S.mulberry32(seed);
+    function one(){
+      const Rr=S.newRun(world,Object.assign({},P,{ign:S.randomIgnition(world,rng),seed:(rng()*1e6)|0})); S.runToEnd(Rr);
+      for (let h=0;h<acc.length;h++) if (Rr.st[h]===S.ST.ATRISK||Rr.st[h]===S.ST.TRAPPED) acc[h]++;
+      i++; $('ensNote').textContent=`Running fire ${i} of ${K}…`;
+      if (i<K) setTimeout(one,0);
+      else { risk=acc; riskRuns=K; btn.disabled=false; busy=false; let hi=0; for (const v of acc) if (v/K>=0.1) hi++;
+        $('ensNote').textContent=`Done. ${hi.toLocaleString()} of ${acc.length.toLocaleString()} simulated households didn't get out in at least 10% of the ${K} fires under these settings. Hover a home for its count.`;
+        $('layer').value='risk'; legend(); renderParcel();
+        $('exportRisk').disabled = false; }
+    }
+    $('ensNote').textContent=`Running fire 1 of ${K}…`; setTimeout(one,20);
   }
-  $('ensNote').textContent=`Running fire 1 of ${K}…`; setTimeout(one,20);
 };
 
 // ---------- policy study ----------
@@ -1861,12 +2042,85 @@ function drawLag(d){
 }
 $('runStudy').onclick=async()=>{
   if (busy) return; busy=true; playing=false; $('play').textContent=R&&R.t?'Resume':'Start';
-  const b=$('runStudy'); b.disabled=true; const K=+$('studyK').value, t0=Date.now();
-  try {
-    const res=await Study.run(S,world,{K,seed:(Math.random()*1e6)|0,progress:(i,n)=>new Promise(r=>{ const el=(Date.now()-t0)/1000, left=el/i*(n-i); $('studyNote').textContent=`Running scenario ${i} of ${n}, about ${Math.ceil(left/60)} min left…`; setTimeout(r,0); })});
-    lastStudy=res; renderStudy(res); $('studyNote').textContent=`Done in ${Math.round((Date.now()-t0)/1000)} s.`;
-  } catch(e){ $('studyNote').textContent='The study stopped: '+e.message; }
-  b.disabled=false; busy=false;
+  const b=$('runStudy'); b.disabled=true; const K=+$('studyK').value, t0=Date.now(), seed=(Math.random()*1e6)|0;
+  const worker = getStudyWorker();
+  if (worker) {
+    worker.onmessage = e => {
+      if (e.data.type === 'progress') {
+        const i = e.data.i, n = e.data.n, el = (Date.now() - t0) / 1000, left = el / i * (n - i);
+        $('studyNote').textContent = `Running scenario ${i} of ${n}, about ${Math.ceil(left / 60)} min left…`;
+      } else if (e.data.type === 'done') {
+        lastStudy = e.data.res; renderStudy(lastStudy); $('studyNote').textContent = `Done in ${Math.round((Date.now() - t0) / 1000)} s.`;
+        $('exportStudy').disabled = false; b.disabled = false; busy = false; worker.terminate();
+      } else if (e.data.type === 'error') {
+        $('studyNote').textContent = 'The study stopped: ' + e.data.message;
+        b.disabled = false; busy = false; worker.terminate();
+      }
+    };
+    worker.postMessage({ type: 'study', world, opts: { K, seed } });
+  } else {
+    try {
+      const res=await Study.run(S,world,{K,seed,progress:(i,n)=>new Promise(r=>{ const el=(Date.now()-t0)/1000, left=el/i*(n-i); $('studyNote').textContent=`Running scenario ${i} of ${n}, about ${Math.ceil(left/60)} min left…`; setTimeout(r,0); })});
+      lastStudy=res; renderStudy(res); $('studyNote').textContent=`Done in ${Math.round((Date.now()-t0)/1000)} s.`;
+      $('exportStudy').disabled = false;
+    } catch(e){ $('studyNote').textContent='The study stopped: '+e.message; }
+    b.disabled=false; busy=false;
+  }
+};
+
+// ---------- exports ----------
+function downloadBlob(content, filename, mime){
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+$('exportRisk').onclick = () => {
+  if (!world) return;
+  const ST_NAMES = ['unaware', 'preparing', 'waiting', 'onroad', 'safe', 'atrisk', 'trapped'];
+  const feats = [];
+  for (let i = 0; i < world.homes.length; i++) {
+    const h = world.homes[i];
+    const [lat, lon] = grid.toLatLng(h.fx, h.fy);
+    const z = world.zones[h.zone];
+    const rPct = (risk && riskRuns) ? Math.round((risk[i] / riskRuns) * 1000) / 10 : null;
+    const props = {
+      id: h.id,
+      zone: z ? z.id : 'None',
+      road: h.road || 'local street',
+      spur: !!h.spur,
+      status: R ? ST_NAMES[R.st[h.id]] : 'unaware',
+      depart_min: (R && R.departT[h.id] >= 0) ? Math.round(R.departT[h.id] * S.DT / 6) / 10 : null,
+      safe_min: (R && R.safeT[h.id] >= 0) ? Math.round(R.safeT[h.id] * S.DT / 6) / 10 : null,
+    };
+    if (rPct !== null) props.egress_risk_pct = rPct;
+    feats.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [Math.round(lon * 1e6) / 1e6, Math.round(lat * 1e6) / 1e6] },
+      properties: props
+    });
+  }
+  downloadBlob(JSON.stringify({ type: 'FeatureCollection', features: feats }, null, 2), 'parcel_egress_risk.geojson', 'application/geo+json');
+};
+$('exportBottlenecks').onclick = () => {
+  if (!R || !world) return;
+  const s = S.summary(R);
+  let csv = 'Road Name,Vehicle-Minutes Stuck in Queues\n';
+  for (const b of s.bottlenecks) {
+    csv += `"${b.name.replace(/"/g, '""')}",${Math.round(b.vehMin * 10) / 10}\n`;
+  }
+  downloadBlob(csv, 'bottlenecks.csv', 'text/csv');
+};
+$('exportStudy').onclick = () => {
+  if (!lastStudy) return;
+  const s = lastStudy.scen;
+  let csv = 'Scenario Key,Scenario Label,Didn\'t Get Out,Caught on Road,Threatened,First Order (min),95% Out (min),Peak on Road,Shadow Evacuees,Departed\n';
+  for (const k of Study.TABLE_ROWS) {
+    const r = s[k]; if (!r) continue;
+    csv += `"${k}","${r.label.replace(/"/g, '""')}",${r.failed},${r.trapped},${r.threatened},${r.firstOrderMin != null ? r.firstOrderMin : ''},${r.t95 != null ? r.t95 : ''},${r.peak},${r.shadow},${r.departed}\n`;
+  }
+  downloadBlob(csv, 'scenario_study_results.csv', 'text/csv');
 };
 
 window.addEventListener('resize',()=>{ drawChart(); drawLag(); });

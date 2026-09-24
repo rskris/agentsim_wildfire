@@ -251,14 +251,46 @@ const RealWorld = (function () {
     for (const n of nodes) { n.local = n.out.some(id => edges[id].type !== 'hwy') || n.inn.some(id => edges[id].type !== 'hwy'); }
     for (const h of homes) h.spur = nodes[h.node].nb.size === 1;
 
-    // zones: 2 km grid
-    const ZS = 40, zmap = new Map(), zones = [];
-    for (const h of homes) {
-      const r = Math.floor(h.y / ZS), q = Math.floor(h.x / ZS), key = r + ',' + q;
-      if (!zmap.has(key)) { zmap.set(key, zones.length); zones.push({ id: String.fromCharCode(65 + r) + (q + 1), r, q, n: 0, wui: 0, sx: 0, sy: 0 }); }
-      const z = zmap.get(key); h.zone = z; const Z = zones[z]; Z.n++; Z.sx += h.fx; Z.sy += h.fy; if (lu[h.c] === LU.WUI || lu[h.c] === LU.CHAP) Z.wui++;
+    // zones: custom polygons if provided, otherwise 2 km grid
+    const zones = [];
+    if (opts.zones && opts.zones.length) {
+      const zR = new Int16Array(N).fill(0);
+      const zfeats = opts.zones;
+      for (let i = 0; i < zfeats.length; i++) {
+        const p = zfeats[i].properties || {};
+        const zid = p.id || p.zone_id || p.zone || p.name || p.zone_name || p.ZONE || ('Zone ' + (i + 1));
+        zones.push({ id: String(zid), n: 0, wui: 0, sx: 0, sy: 0, r: 0, q: i });
+      }
+      rasterize(zfeats, grid, W, H, (p, fi) => (fi + 1), zR);
+      let outsideZone = -1;
+      for (const h of homes) {
+        let z = zR[h.c] - 1;
+        if (z < 0 || z >= zones.length) {
+          if (outsideZone < 0) {
+            outsideZone = zones.length;
+            zones.push({ id: 'Other', n: 0, wui: 0, sx: 0, sy: 0, r: 0, q: outsideZone });
+          }
+          z = outsideZone;
+        }
+        h.zone = z;
+        const Z = zones[z];
+        Z.n++; Z.sx += h.fx; Z.sy += h.fy;
+        if (lu[h.c] === LU.WUI || lu[h.c] === LU.CHAP) Z.wui++;
+      }
+      for (const z of zones) {
+        z.foot = z.n > 0 ? (z.wui / z.n > 0.5) : false;
+        z.cx = z.n > 0 ? (z.sx / z.n) : (W / 2);
+        z.cy = z.n > 0 ? (z.sy / z.n) : (H / 2);
+      }
+    } else {
+      const ZS = 40, zmap = new Map();
+      for (const h of homes) {
+        const r = Math.floor(h.y / ZS), q = Math.floor(h.x / ZS), key = r + ',' + q;
+        if (!zmap.has(key)) { zmap.set(key, zones.length); zones.push({ id: String.fromCharCode(65 + r) + (q + 1), r, q, n: 0, wui: 0, sx: 0, sy: 0 }); }
+        const z = zmap.get(key); h.zone = z; const Z = zones[z]; Z.n++; Z.sx += h.fx; Z.sy += h.fy; if (lu[h.c] === LU.WUI || lu[h.c] === LU.CHAP) Z.wui++;
+      }
+      for (const z of zones) { z.foot = z.wui / z.n > 0.5; z.cx = z.sx / z.n; z.cy = z.sy / z.n; }
     }
-    for (const z of zones) { z.foot = z.wui / z.n > 0.5; z.cx = z.sx / z.n; z.cy = z.sy / z.n; }
 
     // derived indexes
     const cellHomes = {};
@@ -349,7 +381,7 @@ const RealWorld = (function () {
     return (e - w) * 92000 * (n - s) * 110540;
   }
   function kindOf(features) {
-    let seg = 0, poly = 0, pt = 0, lc = 0, luT = 0, bT = 0, bHint = 0; const areas = [];
+    let seg = 0, poly = 0, pt = 0, lc = 0, luT = 0, bT = 0, bHint = 0, zT = 0; const areas = [];
     for (const f of features.slice(0, 800)) {
       const g = f.geometry && f.geometry.type, p = f.properties || {};
       if ((g === 'LineString' || g === 'MultiLineString') && (p.subtype === 'road' || p.class || p.highway)) seg++;
@@ -359,10 +391,12 @@ const RealWorld = (function () {
         if (p.type === 'land_use') luT++;
         if (p.type === 'building') bT++;
         if (BLD_HINT.some(k => p[k] != null)) bHint++;
+        if (p.evac_zone || p.zone_id || p.zone_name || p.ZONE || p.Zone || (p.zone && !p.class && !p.subtype)) zT++;
       } else if (g === 'Point') pt++;
     }
     if (seg && seg >= poly && seg >= pt) return 'segments';
     if (poly && poly >= pt) {
+      if (zT > poly * 0.4) return 'zones';
       if (lc > poly * 0.6) return 'landcover';
       if (luT > poly * 0.6) return 'landuse';
       if (bT > poly * 0.6 || bHint > poly * 0.2) return 'buildings';
@@ -377,12 +411,13 @@ const RealWorld = (function () {
     let best = null; for (const f of features) { const z = zoomOf(f); if (z != null && (best == null || z > best)) best = z; }
     return best == null ? features : features.filter(f => { const z = zoomOf(f); return z == null || z === best; });
   }
-  // Scanline fill of polygon features onto the grid; valueFn(props) returns a code > 0 or 0 to skip
+  // Scanline fill of polygon features onto the grid; valueFn(props, index) returns a code > 0 or 0 to skip
   function rasterize(features, grid, W, H, valueFn, target) {
     let n = 0;
-    for (const f of features) {
+    for (let fi = 0; fi < features.length; fi++) {
+      const f = features[fi];
       const g = f.geometry; if (!g) continue;
-      const v = valueFn(f.properties || {}); if (!v) continue;
+      const v = valueFn(f.properties || {}, fi); if (!v) continue;
       const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
       for (const poly of polys) {
         const rings = poly.map(r => r.map(([lon, lat]) => grid.toGrid(lat, lon)));
