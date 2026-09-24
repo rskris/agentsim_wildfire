@@ -1,0 +1,9 @@
+# downloaded Overture data (large, re-creatable with scripts/get_sb_overture.py)
+sb_overture/
+data/
+*.geojson
+*.geojsonseq
+*.parquet
+node_modules/
+.DS_Store
+__pycache__/

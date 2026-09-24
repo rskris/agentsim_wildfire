@@ -1,0 +1,1877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wildfire egress simulator</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --page:#EDF1F2; --panel:#FFFFFF; --ink:#1B2A33; --muted:#586A74; --line:#D2DADE; --soft:#F5F7F8;
+  --fire:#D9480F; --ember:#F08C00; --safe:#0B7A75; --road:#1971C2; --risk:#C92A2A; --caught:#7B2D8E; --alert:#6741D9; --slate:#56646C;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --page:#0D1720; --panel:#14222D; --ink:#E3EAEE; --muted:#93A4AE; --line:#27394A; --soft:#101C26;
+  --fire:#FF7A45; --ember:#FFA94D; --safe:#38C2B8; --road:#4DABF7; --risk:#FF6B6B; --caught:#C77DDB; --alert:#9775FA; --slate:#8A9AA3; } }
+:root[data-theme="dark"]{
+  --page:#0D1720; --panel:#14222D; --ink:#E3EAEE; --muted:#93A4AE; --line:#27394A; --soft:#101C26;
+  --fire:#FF7A45; --ember:#FFA94D; --safe:#38C2B8; --road:#4DABF7; --risk:#FF6B6B; --caught:#C77DDB; --alert:#9775FA; --slate:#8A9AA3; }
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.55 var(--body)}
+.wrap{max-width:1320px;margin:0 auto;padding:20px 20px 40px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 32px;margin-bottom:16px}
+h1{font:600 clamp(28px,4vw,40px)/1 var(--display);margin:0;letter-spacing:.2px}
+.lede{margin:6px 0 0;color:var(--muted);max-width:68ch}
+.clock{font:600 clamp(36px,5vw,56px)/1 var(--display);font-variant-numeric:tabular-nums;text-align:right}
+.clock small{display:block;font:400 13px/1.3 var(--body);color:var(--muted)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+@media (max-width:980px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.mapbox{padding:10px}
+.mapwrap{position:relative;width:100%;aspect-ratio:8/5;border-radius:6px;overflow:hidden;background:#9CC3D5}
+canvas#map{width:100%;height:100%;display:block;cursor:crosshair}
+.hint{position:absolute;left:10px;top:10px;background:rgba(20,30,38,.78);color:#fff;font-size:13px;padding:6px 10px;border-radius:6px;pointer-events:none;max-width:70%}
+.status{font-size:13px;color:var(--muted);min-height:20px;margin:8px 2px 0}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted);margin:8px 2px 0}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block}
+.tallies{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--line);border-top:1px solid var(--line);margin:10px -10px -10px;border-radius:0 0 10px 10px;overflow:hidden}
+@media (max-width:640px){.tallies{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tally{background:var(--panel);padding:10px 12px}
+.tally b{display:block;font:600 30px/1 var(--display);font-variant-numeric:tabular-nums}
+.tally span{font-size:12.5px;color:var(--muted)}
+.chartbox{padding:12px 14px;margin-top:16px}
+.chartbox h2,.rail h2,.cmp h2{font:600 20px/1.2 var(--display);margin:0 0 8px}
+canvas#chart{width:100%;height:150px;display:block}
+.rail{padding:4px 16px 16px}
+.rail section{padding:12px 0;border-bottom:1px solid var(--line)}
+.rail section:last-child{border-bottom:0}
+label.row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px;margin:8px 0 2px}
+label.row output{font-variant-numeric:tabular-nums;color:var(--muted)}
+input[type=range]{width:100%;accent-color:var(--fire)}
+select{width:100%;font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--soft);color:var(--ink)}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:4px}
+.seg button{border:0;border-right:1px solid var(--line);background:var(--soft);color:var(--ink);font:inherit;font-size:13.5px;padding:7px 6px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;margin-top:10px}
+.check input{accent-color:var(--fire);width:16px;height:16px}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{font:500 14px/1 var(--body);padding:10px 14px;border-radius:6px;border:1px solid var(--line);background:var(--soft);color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--fire);border-color:var(--fire);color:#fff}
+.btn:disabled{opacity:.5;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--road);outline-offset:2px}
+.note{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+.alerts{list-style:none;margin:6px 0 0;padding:0;font-size:13.5px}
+.alerts li{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--line)}
+.alerts li:last-child{border-bottom:0}
+.cmp{padding:14px;margin-top:16px}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:720px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:500;color:var(--muted);font-size:13px}
+td.n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}th.n{text-align:right}
+.empty{color:var(--muted);font-size:14px;padding:10px 0}
+.results{padding:16px;margin-top:16px}
+.results h2,.study h2{font:600 24px/1.15 var(--display);margin:0 0 4px}
+.results .sub,.study .sub{color:var(--muted);font-size:14px;margin:0 0 14px;max-width:80ch}
+.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+@media (max-width:760px){.metrics{grid-template-columns:1fr}}
+.metric{background:var(--panel);padding:14px 16px}
+.metric .v{font:600 38px/1 var(--display);font-variant-numeric:tabular-nums}
+.metric .l{font-weight:500;font-size:14px;margin-top:6px}
+.metric .d{font-size:13px;color:var(--muted);margin-top:2px}
+.twocol{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px;margin-top:18px}
+@media (max-width:860px){.twocol{grid-template-columns:1fr}}
+.twocol h3,.study h3{font:600 18px/1.2 var(--display);margin:0 0 6px}
+table.small{min-width:0;font-size:13.5px}
+.bar{height:8px;background:var(--caught);border-radius:2px;opacity:.75}
+.study{padding:16px;margin-top:16px}
+.studygrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;margin-top:18px}
+@media (max-width:980px){.studygrid{grid-template-columns:1fr}}
+canvas#lagChart{width:100%;height:220px;display:block}
+.findings{margin-top:22px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 28px}
+@media (max-width:860px){.findings{grid-template-columns:1fr}}
+.finding h3{margin-bottom:4px}
+.finding p{margin:0;font-size:14.5px;max-width:68ch}
+.caveat{margin-top:20px;padding:12px 14px;border-left:3px solid var(--ember);background:var(--soft);font-size:14px;border-radius:0}
+tr.hl td{background:var(--soft)}
+.about{margin-top:16px;padding:14px 16px;font-size:14px;color:var(--muted)}
+.about p{margin:0 0 8px;max-width:95ch}
+.about p:last-child{margin:0}
+
+.mapwrap{aspect-ratio:auto;height:clamp(440px,64vh,680px);background:#dfe6e9}
+#map{position:absolute;inset:0}
+canvas.ov{position:absolute;left:0;top:0;z-index:450;pointer-events:none}
+.loading{position:absolute;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;background:rgba(237,241,242,.9)}
+.loadcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;max-width:440px;width:calc(100% - 32px)}
+.loadcard h2{font:600 22px/1.2 var(--display);margin:0 0 10px}
+.steps{list-style:none;margin:0;padding:0;font-size:14px}
+.steps li{padding:4px 0;color:var(--muted)}
+.steps li.on{color:var(--ink)} .steps li.done{color:var(--safe)} .steps li.err{color:var(--risk)}
+.windbadge{position:absolute;left:10px;top:84px;z-index:800;background:rgba(255,255,255,.9);border-radius:8px;padding:6px 10px;font-size:12.5px;color:#1B2A33;display:flex;align-items:center;gap:8px;pointer-events:none}
+.windbadge svg{display:block}
+
+#fileBtn:focus-within{outline:2px solid var(--road);outline-offset:2px}
+.loadcard{max-height:calc(100% - 24px);overflow:auto}
+.txt{width:100%;font:inherit;font-size:14px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--soft);color:var(--ink)}
+.drop{margin-top:12px;border:1.5px dashed var(--border-strong,#9AA8B0);border-radius:8px;padding:18px 12px;text-align:center;display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted);background:var(--soft)}
+.drop b{color:var(--ink);font-weight:500}
+.drop.over{border-color:var(--road);background:rgba(25,113,194,.07)}
+.linklike{color:var(--road);text-decoration:underline;cursor:pointer}
+.filelist{list-style:none;margin:10px 0 0;padding:0;font-size:13.5px}
+.filelist li{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line)}
+.filelist li span:last-child{color:var(--muted);text-align:right}
+.filelist li.bad span:last-child{color:var(--risk)}
+details.how{margin-top:14px;font-size:13.5px;color:var(--muted)}
+details.how summary{cursor:pointer;color:var(--ink);font-weight:500}
+details.how pre{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:12px;overflow-x:auto;color:var(--ink)}
+details.how code{font-size:12.5px}
+.warn{margin:8px 2px 0;font-size:13px;color:var(--risk)}
+.leaflet-container{font-family:var(--body)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1 id="title">Wildfire egress simulator</h1>
+      <p class="lede">Real roads and buildings from Overture Maps and real terrain, with modeled fuels and behavior. Load your study area, click the hills to start a fire, decide how evacuation orders go out, and see who gets out in time.</p>
+    </div>
+    <div class="clock"><span id="clock">T+0:00</span><small>time since ignition</small></div>
+  </header>
+
+  <div class="grid">
+    <div>
+      <div class="panel mapbox">
+        <div class="mapwrap">
+          <div id="map" aria-label="Map of Santa Barbara. Click in the hills to set an ignition point."></div>
+          <div class="windbadge" id="windbadge"></div>
+          <div class="loading" id="loading">
+            <div class="loadcard">
+              <div id="intake">
+                <h2>Load your study area</h2>
+                <p class="note" style="color:var(--ink)">Upload Overture Maps road segments. Building footprints, land cover and land use are optional but make the model much better. The map centers on your data and terrain elevation is fetched automatically.</p>
+                <label class="row" for="areaName">Study area name</label>
+                <input type="text" id="areaName" value="Santa Barbara foothills" class="txt">
+                <div class="drop" id="drop" tabindex="0">
+                  <b>Drop GeoJSON files here</b>
+                  <span>or <label class="linklike">choose files<input type="file" id="files" multiple hidden accept=".geojson,.json,.geojsonseq,.geojsonl,.ndjson,.jsonl,.osm,.xml"></label></span>
+                </div>
+                <ul class="filelist" id="filelist"></ul>
+                <div class="btns" style="margin-top:10px"><button class="btn primary" id="build" disabled>Build the model</button></div>
+                <details class="how">
+                  <summary>How to get the files</summary>
+                  <p>Install Overture's command-line tool with <code>pip install overturemaps</code>, then download each theme for a box given as west,south,east,north. For the Santa Barbara front country:</p>
+                  <pre>overturemaps download --bbox=-119.78,34.39,-119.56,34.51 \
+  -f geojson --type=segment -o segments.geojson
+overturemaps download --bbox=-119.78,34.39,-119.56,34.51 \
+  -f geojson --type=building -o buildings.geojson
+overturemaps download --bbox=-119.78,34.39,-119.56,34.51 \
+  -f geojson --type=land_cover -o landcover.geojson
+overturemaps download --bbox=-119.78,34.39,-119.56,34.51 \
+  -f geojson --type=land_use -o landuse.geojson</pre>
+                  <p>Make the box about 1–2 km larger than the area you care about; the model trims the edges and uses roads that leave the box as evacuation exits. Keep it under about 25 km across. GeoJSON and GeoJSONSeq both work; for GeoParquet, re-export with <code>-f geojson</code>.</p>
+                  <p>Without building footprints, households are placed along residential streets. Without land cover, fuels are inferred from terrain and building density. Land use adds irrigated parks, golf courses, orchards and vineyards.</p>
+                </details>
+              </div>
+              <div id="progress" hidden>
+                <h2 id="progTitle">Building the model</h2>
+                <ul class="steps">
+                  <li id="st-files">Reading roads and buildings</li>
+                  <li id="st-dem">Loading terrain elevation for your area</li>
+                  <li id="st-build">Deriving fuels, placing households, drawing zones</li>
+                </ul>
+                <p class="note" id="loadNote"></p>
+                <div class="btns" style="margin-top:10px"><button class="btn" id="back" hidden>Back to files</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div class="warn" id="warn" hidden></div>
+        <div class="status" id="status">Hover over the map to inspect a location.</div>
+        <div class="tallies">
+          <div class="tally"><b id="k-safe" style="color:var(--safe)">0</b><span>reached safety</span></div>
+          <div class="tally"><b id="k-road" style="color:var(--road)">0</b><span>on the road</span></div>
+          <div class="tally"><b id="k-prep" style="color:var(--ember)">0</b><span>warned, getting ready</span></div>
+          <div class="tally"><b id="k-risk" style="color:var(--risk)">0</b><span>fire reached home first</span></div>
+          <div class="tally"><b id="k-trap" style="color:var(--caught)">0</b><span>caught on a burning road</span></div>
+        </div>
+      </div>
+      <div class="panel chartbox">
+        <h2>How the evacuation unfolds</h2>
+        <canvas id="chart" height="150"></canvas>
+      </div>
+    </div>
+
+    <aside class="panel rail">
+      <section>
+        <h2>Run</h2>
+        <div class="btns">
+          <button class="btn primary" id="play" disabled>Start</button>
+          <button class="btn" id="finish" disabled>Skip to end</button>
+          <button class="btn" id="reset" disabled>Reset</button>
+        </div>
+        <label class="row" for="speed">Playback speed <output id="speedOut">Normal</output></label>
+        <input type="range" id="speed" min="0" max="3" step="1" value="1">
+      </section>
+      <section>
+        <h2>Fire weather</h2>
+        <label class="row" for="wind">Wind pattern</label>
+        <select id="wind">
+          <option value="0">Sundowner, down-canyon from the north</option>
+          <option value="45">Santa Ana, from the northeast</option>
+          <option value="225">Onshore breeze, from the southwest</option>
+        </select>
+        <label class="row" for="ws">Wind speed <output id="wsOut">50 km/h</output></label>
+        <input type="range" id="ws" min="10" max="80" step="5" value="50">
+        <label class="row">Time of day</label>
+        <div class="seg" role="group" aria-label="Time of day"><button id="day" aria-pressed="true">Afternoon</button><button id="night" aria-pressed="false">2 a.m.</button></div>
+        <div class="btns" style="margin-top:10px"><button class="btn" id="randIgn" disabled>Random ignition</button></div>
+      </section>
+      <section>
+        <h2>Alerting</h2>
+        <label class="row" for="det">Fire reported after <output id="detOut">8 min</output></label>
+        <input type="range" id="det" min="0" max="30" step="1" value="8">
+        <label class="row">Who gets the evacuation order</label>
+        <div class="seg" role="group" aria-label="Alert policy"><button id="polTrig" aria-pressed="true">Zones near the fire</button><button id="polAll" aria-pressed="false">Everyone at once</button></div>
+        <label class="row" for="trig">Order a zone when fire is within <output id="trigOut">1.5 km</output></label>
+        <input type="range" id="trig" min="0.5" max="4" step="0.25" value="1.5">
+        <label class="row" for="lag">Time to issue each order <output id="lagOut">10 min</output></label>
+        <input type="range" id="lag" min="0" max="30" step="1" value="10">
+        <ul class="alerts" id="alerts"></ul>
+      </section>
+      <section>
+        <h2>People and roads</h2>
+        <label class="row">How households decide to leave</label>
+        <div class="seg" role="group" aria-label="Behavior model"><button id="mRules" aria-pressed="true">Wait for the order</button><button id="mAdapt" aria-pressed="false">Read the neighborhood</button></div>
+        <p class="note" id="modeNote">Households leave when they get the official order or see flames nearby, and take the fastest open route.</p>
+        <label class="check"><input type="checkbox" id="cf"> Contraflow on highways and arterials, toward the exits</label>
+      </section>
+      <section>
+        <h2>Map layer</h2>
+        <select id="layer">
+          <option value="none">Households and fire</option>
+          <option value="smoke">Smoke</option>
+          <option value="cong">Traffic congestion</option>
+          <option value="info">Word of mouth (neighbors leaving)</option>
+          <option value="fuel">Fuel model</option>
+          <option value="risk">Parcel egress risk (after mapping)</option>
+        </select>
+        <div class="btns" style="margin-top:10px"><button class="btn" id="ens" disabled>Map parcel egress risk</button></div>
+        <p class="note" id="ensNote">Runs 10 fires from random ignitions under the current settings and scores each home by how often it didn't get out. Takes about 10–30 seconds.</p>
+      </section>
+    </aside>
+  </div>
+
+  <section class="panel results" aria-live="polite">
+    <h2>Results for this run</h2>
+    <p class="sub" id="resSub">Start a fire to see results. They update live and settle when the run finishes.</p>
+    <div class="metrics">
+      <div class="metric"><div class="v" id="m-fail" style="color:var(--risk)">–</div><div class="l">Households that didn't get out</div><div class="d" id="m-fail-d">Fire reached home first, or caught on a burning road</div></div>
+      <div class="metric"><div class="v" id="m-order">–</div><div class="l">Ignition to first evacuation order</div><div class="d" id="m-order-d">Detection time plus time to issue</div></div>
+      <div class="metric"><div class="v" id="m-t95" style="color:var(--safe)">–</div><div class="l">95% of evacuees safe by</div><div class="d">Clearance time since ignition</div></div>
+      <div class="metric"><div class="v" id="m-peak" style="color:var(--road)">–</div><div class="l">Peak vehicles on the road</div><div class="d" id="m-peak-d">Household vehicles at the busiest moment</div></div>
+      <div class="metric"><div class="v" id="m-shadow" style="color:var(--alert)">–</div><div class="l">Shadow evacuation</div><div class="d">Households that left before their zone was ordered</div></div>
+      <div class="metric"><div class="v" id="m-parcel">–</div><div class="l">Parcel egress risk</div><div class="d" id="m-parcel-d">Map parcel egress risk to score every home across 10 fires</div></div>
+    </div>
+    <div class="twocol">
+      <div>
+        <h3>Zones ranked by risk</h3>
+        <div class="tablewrap"><table class="small"><thead><tr><th>Zone</th><th class="n">Homes</th><th class="n">Fire reached</th><th class="n">Didn't get out</th><th class="n">Ordered at</th></tr></thead><tbody id="zoneBody"></tbody></table></div>
+        <p class="note">Top 10 zones. Didn't get out counts a zone's households wherever they were caught, including on roads outside the zone.</p>
+      </div>
+      <div>
+        <h3>Worst bottlenecks</h3>
+        <div class="tablewrap"><table class="small"><thead><tr><th>Road</th><th class="n">Vehicle-minutes stuck in queues</th><th style="width:28%"></th></tr></thead><tbody id="bnBody"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="panel cmp">
+    <h2>Compare runs</h2>
+    <p class="note" style="margin:0 0 8px">Each finished run is added here. Change one setting at a time to see what it buys you.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Run</th><th>Conditions</th><th>Alerting</th><th>Behavior and roads</th><th class="n">Didn't get out</th><th class="n">Share of homes fire reached</th><th class="n">First order</th><th class="n">95% out by</th><th class="n">Peak on road</th><th class="n">Shadow evacuation</th></tr></thead>
+      <tbody id="cmpBody"></tbody></table></div>
+    <div class="empty" id="cmpEmpty">No runs yet. Start a fire to add the first one.</div>
+    <div class="btns" style="margin-top:8px"><button class="btn" id="clearCmp">Clear table</button></div>
+  </div>
+
+  <section class="panel study">
+    <h2>What the scenarios show</h2>
+    <p class="sub" id="studySub">Runs the same set of random fires through 16 policy scenarios, so the differences come from the policy, not the fire. On a real road network expect roughly 3–10 minutes for 6 fires, depending on the area and your computer; the map pauses while it runs.</p>
+    <div class="btns">
+      <select id="studyK" style="width:auto"><option value="6" selected>6 fires (quick look)</option><option value="12">12 fires</option><option value="24">24 fires (most stable)</option></select>
+      <button class="btn primary" id="runStudy" disabled>Run the policy study</button>
+    </div>
+    <p class="note" id="studyNote"></p>
+    <div id="studyOut" hidden>
+      <div class="studygrid">
+        <div>
+          <h3>Scenario comparison</h3>
+          <div class="tablewrap"><table class="small"><thead><tr><th>Scenario (one change from baseline)</th><th class="n">Didn't get out</th><th class="n">Caught on road</th><th class="n">First order</th><th class="n">95% out by</th><th class="n">Peak on road</th></tr></thead><tbody id="studyBody"></tbody></table></div>
+        </div>
+        <div>
+          <h3>Minutes of delay and their cost</h3>
+          <canvas id="lagChart" height="220" aria-label="Line chart of households that didn't get out versus minutes to issue each order"></canvas>
+          <p class="note">Households that didn't get out per fire, by time to issue each order. Afternoon, zones within 1.5 km, fire reported at 8 minutes.</p>
+        </div>
+      </div>
+      <div class="findings" id="findings"></div>
+      <div class="caveat" id="caveat"></div>
+    </div>
+  </section>
+
+  <div class="panel about">
+    <p>Real inputs: road segments, road classes, names, one-way rules and speed limits, plus building footprints, land cover and land use, come from the Overture Maps Foundation files you upload. Follow Overture's attribution and licensing terms for each theme when you share results. Elevation comes from open Terrain Tiles (AWS Open Data, derived from USGS 3DEP and SRTM). Basemaps are from CARTO, OpenTopoMap, Esri and OpenStreetMap.</p>
+    <p>Modeled inputs: residential buildings become households (apartments count as several), sampled so each simulated household can stand for a few homes when the area is large. Evacuation zones are a 2 km grid, not official zones. Fuels come from Overture land cover and land use when you upload them, and are inferred from terrain and building density otherwise; either way they are a coarse stand-in for LANDFIRE fuel models. Exits are where highways and arterials leave the uploaded area. Fire behavior, alert reach, departure delays and road capacities are illustrative and uncalibrated. None of this represents a real event or an official plan.</p>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const Sim = (function () {
+  let W = 160, H = 100; const CELL = 50, DT = 10, BS = 4; let BW = W / BS, BH = H / BS;
+  function setDims(w, h) { W = w; H = h; BW = w / BS; BH = h / BS; }
+  const LU = { OCEAN: 0, BEACH: 1, URBAN: 2, WUI: 3, CHAP: 4 };
+  const ST = { UNAWARE: 0, PREPARING: 1, WAITING: 2, ONROAD: 3, SAFE: 4, ATRISK: 5, TRAPPED: 6 };
+  const DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function coastY(x) { return 90 + 3 * Math.sin(x / 17) + 1.5 * Math.sin(x / 7 + 1); }
+  function wuiTop(x) { return 44 + 4 * Math.sin(x / 9) + 2 * Math.sin(x / 4.3); }
+  function urbanTop(x) { return 68 + 2 * Math.sin(x / 13); }
+
+  const ART = [22, 52, 86, 116, 146];
+  const CON = [8, 37, 68, 101, 131, 156];
+  const SPUR = [35, 70, 100, 132];
+
+  const LINES = {
+    hwy: { f: x => coastY(x) - 5, segs: [[0, 159]], spec: { lanes: 2, speed: 27, type: 'hwy', name: 'Coast Highway' } },
+    u1: { f: x => 78 + Math.sin(x / 10), segs: [[3, 157]], spec: { lanes: 1, speed: 13, type: 'urban', name: 'Harbor Avenue' } },
+    u2: { f: x => 71.5 + Math.sin(x / 12), segs: [[3, 157]], spec: { lanes: 1, speed: 13, type: 'urban', name: 'Grove Street' } },
+    f1: { f: x => 63 + 2 * Math.sin(x / 11), segs: [[10, 152]], spec: { lanes: 1, speed: 11, type: 'local', name: 'Foothill Road' } },
+    f2: { f: x => 55 + 2 * Math.sin(x / 9), segs: [[12, 44], [48, 104], [110, 152]], spec: { lanes: 1, speed: 11, type: 'local', name: 'Upper Ridge Road' } },
+  };
+  const VERT = [
+    ...ART.map((x, i) => ({ x, top: 46, lines: ['f2', 'f1', 'u2', 'u1', 'hwy'], spec: { lanes: 1, speed: 15, type: 'art', name: ['Toyon', 'Manzanita', 'Ceanothus', 'Sage', 'Buckwheat'][i] + ' Canyon Road' } })),
+    ...CON.map((x, i) => ({ x, top: null, lines: ['u2', 'u1', 'hwy'], spec: { lanes: 1, speed: 13, type: 'urban', name: ['Anchor', 'Kelp', 'Pier', 'Dune', 'Tide', 'Surf'][i] + ' Street' } })),
+    ...SPUR.map((x, i) => ({ x, top: 42, lines: ['f2'], spec: { lanes: 1, speed: 9, type: 'local', name: ['Hollyleaf', 'Coffeeberry', 'Scrub Oak', 'Chamise'][i] + ' Lane (dead end)' } })),
+  ];
+  const SYNTH_ZONES = [
+    { id: 'F1', x0: 0, x1: 37, foot: true }, { id: 'F2', x0: 37, x1: 70, foot: true }, { id: 'F3', x0: 70, x1: 101, foot: true },
+    { id: 'F4', x0: 101, x1: 131, foot: true }, { id: 'F5', x0: 131, x1: 160, foot: true },
+    { id: 'U1', x0: 0, x1: 53, foot: false }, { id: 'U2', x0: 53, x1: 106, foot: false }, { id: 'U3', x0: 106, x1: 160, foot: false },
+  ];
+  const FIRE = { pBase: 0.012, spot: 0.0003, spotDist: 0.5, wexp: 1.6, urban: 0.12 };
+  let ZONES = SYNTH_ZONES;
+  function setZones(z) { ZONES = z; }
+  const CAP = { hwy: 3, art: 1.9, urban: 2.0, local: 1.5 }; // household-vehicle units per lane per tick (~1.7 veh/household, smoke-degraded flow)
+
+  function inSeg(line, x) { return LINES[line].segs.some(s => x >= s[0] && x <= s[1]); }
+
+  function buildWorld() {
+    setDims(160, 100); ZONES = SYNTH_ZONES;
+    const N = W * H;
+    const elev = new Float32Array(N), lu = new Uint8Array(N), fuel = new Float32Array(N), road = new Uint8Array(N);
+    const rng = mulberry32(7);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = y * W + x, cy = coastY(x), d = cy - y;
+      let e = d > 0 ? d * 5 + Math.max(0, 50 - y) * 14 : 0;
+      e += (Math.sin(x / 6.5) * 0.5 + Math.sin(x / 3.1 + y / 5) * 0.3) * Math.max(0, 70 - y) * 1.2;
+      let canyon = 0;
+      for (const ax of ART.concat(SPUR)) canyon = Math.max(canyon, Math.exp(-(((x - ax) / 2.5) ** 2)));
+      e -= canyon * Math.max(0, 62 - y) * 1.5;
+      elev[c] = Math.max(0, e);
+      if (y > cy) { lu[c] = LU.OCEAN; fuel[c] = 0; }
+      else if (y > cy - 1.5) { lu[c] = LU.BEACH; fuel[c] = 0.03; }
+      else if (y >= urbanTop(x)) { lu[c] = LU.URBAN; fuel[c] = FIRE.urban + 0.06 * rng(); }
+      else if (y >= wuiTop(x)) { lu[c] = LU.WUI; fuel[c] = 0.55 + 0.4 * canyon + 0.1 * rng(); }
+      else { lu[c] = LU.CHAP; fuel[c] = 0.85 + 0.15 * rng(); }
+    }
+
+    const nodes = [], edges = [];
+    function node(x, y) {
+      for (let i = 0; i < nodes.length; i++) { const n = nodes[i]; if (Math.abs(n.x - x) < 0.6 && Math.abs(n.y - y) < 0.6) return i; }
+      nodes.push({ id: nodes.length, x, y, out: [], inn: [], exit: false, local: false });
+      return nodes.length - 1;
+    }
+    function addEdge(a, b, spec) {
+      const A = nodes[a], B = nodes[b], dx = B.x - A.x, dy = B.y - A.y, dist = Math.hypot(dx, dy);
+      const cells = [], n = Math.max(1, Math.ceil(dist * 2));
+      for (let i = 0; i <= n; i++) {
+        const cx = Math.round(A.x + dx * i / n), cy = Math.round(A.y + dy * i / n);
+        if (cx >= 0 && cx < W && cy >= 0 && cy < H) { const c = cy * W + cx; if (!cells.includes(c)) cells.push(c); }
+      }
+      const e = { id: edges.length, from: a, to: b, len: dist * CELL, lanes: spec.lanes, speed: spec.speed, type: spec.type, name: spec.name, cells,
+        mx: (A.x + B.x) / 2, my: (A.y + B.y) / 2 };
+      edges.push(e); A.out.push(e.id); B.inn.push(e.id);
+      if (spec.type !== 'hwy') { A.local = true; B.local = true; }
+    }
+    function link(a, b, spec, pathFn) {
+      const A = nodes[a], B = nodes[b];
+      const n = Math.max(1, Math.round(Math.hypot(B.x - A.x, B.y - A.y) / 5));
+      let prev = a;
+      for (let i = 1; i <= n; i++) {
+        const id = i === n ? b : node(...pathFn(i / n));
+        addEdge(prev, id, spec); addEdge(id, prev, spec); prev = id;
+      }
+    }
+    for (const [name, L] of Object.entries(LINES)) {
+      for (const [s0, s1] of L.segs) {
+        const xs = [s0, s1];
+        for (const v of VERT) if (v.lines.includes(name) && v.x > s0 && v.x < s1) xs.push(v.x);
+        xs.sort((a, b) => a - b);
+        for (let i = 0; i < xs.length - 1; i++) {
+          const xa = xs[i], xb = xs[i + 1];
+          link(node(xa, L.f(xa)), node(xb, L.f(xb)), L.spec, t => { const x = xa + (xb - xa) * t; return [x, L.f(x)]; });
+        }
+      }
+    }
+    for (const v of VERT) {
+      const pts = [];
+      if (v.top !== null) pts.push(v.top);
+      for (const ln of v.lines) if (inSeg(ln, v.x)) pts.push(LINES[ln].f(v.x));
+      pts.sort((a, b) => a - b);
+      for (let i = 0; i < pts.length - 1; i++) {
+        const ya = pts[i], yb = pts[i + 1];
+        link(node(v.x, ya), node(v.x, yb), v.spec, t => [v.x, ya + (yb - ya) * t]);
+      }
+    }
+    nodes[node(0, LINES.hwy.f(0))].exit = true;
+    nodes[node(159, LINES.hwy.f(159))].exit = true;
+
+    const cellEdges = {};
+    for (const e of edges) {
+      e.tt = Math.max(1, Math.round(e.len / e.speed / DT));
+      for (const c of e.cells) { road[c] = 1; (cellEdges[c] = cellEdges[c] || []).push(e.id); }
+    }
+    for (let c = 0; c < N; c++) if (road[c]) fuel[c] *= 0.35;
+
+    // distance to road (grid BFS)
+    const rd = new Int16Array(N).fill(999), q = [];
+    for (let c = 0; c < N; c++) if (road[c]) { rd[c] = 0; q.push(c); }
+    for (let h = 0; h < q.length; h++) {
+      const c = q[h], x = c % W, y = (c / W) | 0;
+      for (let k = 0; k < 4; k++) {
+        const nx = x + DIRS[k][0], ny = y + DIRS[k][1];
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const n = ny * W + nx; if (rd[n] > rd[c] + 1) { rd[n] = rd[c] + 1; q.push(n); }
+      }
+    }
+
+    const localNodes = nodes.filter(n => n.local && !n.exit);
+    const homes = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = y * W + x;
+      if (road[c] || rd[c] > 3) continue;
+      const dens = lu[c] === LU.URBAN ? 0.30 : lu[c] === LU.WUI ? 0.36 : 0;
+      if (rng() >= dens) continue;
+      let best = -1, bd = 1e9;
+      for (const n of localNodes) { const d = (n.x - x) ** 2 + (n.y - y) ** 2; if (d < bd) { bd = d; best = n.id; } }
+      const foot = lu[c] === LU.WUI;
+      const zone = ZONES.findIndex(z => z.foot === foot && x >= z.x0 && x < z.x1);
+      const spur = nodes[best].inn.some(eid => /dead end/.test(edges[eid].name));
+      homes.push({ id: homes.length, x, y, c, node: best, zone, spur, b: (y >> 2) * BW + (x >> 2) });
+    }
+    const cellHomes = {};
+    for (const h of homes) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const x = h.x + dx, y = h.y + dy; if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const c = y * W + x; (cellHomes[c] = cellHomes[c] || []).push(h.id);
+    }
+    const zoneBlocks = ZONES.map(() => new Set());
+    for (const h of homes) zoneBlocks[h.zone].add(h.b);
+
+    // slope factor per cell per direction
+    const sf = new Float32Array(N * 8);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = y * W + x;
+      for (let k = 0; k < 8; k++) {
+        const nx = x + DIRS[k][0], ny = y + DIRS[k][1];
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const dist = k < 4 ? CELL : CELL * Math.SQRT2;
+        const s = (elev[ny * W + nx] - elev[c]) / dist;
+        sf[c * 8 + k] = Math.exp(Math.max(-1.5, Math.min(1.5, 3 * s)));
+      }
+    }
+    return { FIRE, W, H, CELL, BS, BW, BH, elev, lu, fuel, road, nodes, edges, homes, cellHomes, cellEdges, zoneBlocks, sf };
+  }
+
+  const DEFAULTS = { ign: { x: 80, y: 28 }, windFrom: 0, windKmh: 50, night: false, detectMin: 8, trigKm: 1.5, lagMin: 10,
+    alertAll: false, mode: 'rules', contraflow: false, seed: 1, maxMin: 240 };
+
+  function newRun(world, params) {
+    const p = Object.assign({}, DEFAULTS, params);
+    const Wd = world, N = W * H, rng = mulberry32(p.seed * 9973 + 13);
+    const ws = p.windKmh / 3.6, th = p.windFrom * Math.PI / 180;
+    const wx = -Math.sin(th), wy = Math.cos(th);
+    const wf = new Float32Array(8);
+    for (let k = 0; k < 8; k++) {
+      const dx = DIRS[k][0], dy = DIRS[k][1], l = Math.hypot(dx, dy);
+      wf[k] = Math.exp(FIRE.wexp * (ws / 10) * (dx * wx + dy * wy) / l) * (k < 4 ? 1 : 0.72);
+    }
+    const nh = Wd.homes.length;
+    const R = {
+      p, t: 0, done: false, world: Wd, wx, wy, ws, wf, rng,
+      fire: new Uint8Array(N), burnLeft: new Uint16Array(N), arrival: new Int32Array(N).fill(-1), burning: [],
+      eq: Wd.edges.map(() => []), active: new Set(), eburn: new Uint16Array(Wd.edges.length), ebud: new Float32Array(Wd.edges.length),
+      ecap: new Float32Array(Wd.edges.length), estore: new Float32Array(Wd.edges.length),
+      st: new Uint8Array(nh), departAt: new Int32Array(nh).fill(-1), departT: new Int32Array(nh).fill(-1),
+      safeT: new Int32Array(nh).fill(-1), fireNear: new Int32Array(nh).fill(-1), exitT: new Int32Array(nh),
+      getsAlert: new Uint8Array(nh), awareBy: new Uint8Array(nh),
+      nodeWait: Wd.nodes.map(() => []), waitNodes: new Set(),
+      blockFire: new Uint8Array(BW * BH), fireDist: new Int16Array(BW * BH).fill(999), blockDirty: true,
+      smoke: new Float32Array(BW * BH), info: new Float32Array(BW * BH), burnCount: new Float32Array(BW * BH),
+      zoneTrig: new Int32Array(ZONES.length).fill(-1), zoneAlert: new Int32Array(ZONES.length).fill(-1),
+      nextRules: new Int32Array(Wd.nodes.length).fill(-1), nextAdapt: new Int32Array(Wd.nodes.length).fill(-1),
+      closedDirty: true, series: [], alertLog: [], edelay: new Float32Array(Wd.edges.length), peak: 0,
+    };
+    for (const e of Wd.edges) {
+      let lanes = e.lanes;
+      if (p.contraflow) {
+        if (Wd.distExit) { if ((e.type === 'art' || e.type === 'hwy') && Wd.distExit[e.to] < Wd.distExit[e.from]) lanes = Math.min(4, e.lanes * 2); }
+        else if (e.type === 'art' && Wd.nodes[e.to].y > Wd.nodes[e.from].y) lanes = 2;
+      }
+      const wgt = Wd.agentWeight || 1;
+      R.ecap[e.id] = CAP[e.type] * lanes / wgt;
+      R.estore[e.id] = Math.max(wgt > 1 ? 1.5 : 2, lanes * e.len / 12.75 / wgt);
+    }
+    const reach = p.night ? 0.65 : 0.88;
+    for (let h = 0; h < nh; h++) R.getsAlert[h] = rng() < reach ? 1 : 0;
+    ignite(R, p.ign.y * W + p.ign.x);
+    for (const [dx, dy] of DIRS.slice(0, 4)) {
+      const x = p.ign.x + dx, y = p.ign.y + dy;
+      if (x >= 0 && y >= 0 && x < W && y < H) ignite(R, y * W + x);
+    }
+    recomputeTrees(R, true);
+    return R;
+  }
+
+  function burnDur(lu) { return lu === LU.CHAP ? 24 : lu === LU.WUI ? 40 : lu === LU.URBAN ? 90 : 6; }
+
+  function ignite(R, c) {
+    const Wd = R.world;
+    if (R.fire[c] !== 0 || Wd.fuel[c] <= 0) return;
+    R.fire[c] = 1; R.burnLeft[c] = burnDur(Wd.lu[c]); R.arrival[c] = R.t; R.burning.push(c);
+    const x = c % W, y = (c / W) | 0, b = (y >> 2) * BW + (x >> 2);
+    if (!R.blockFire[b]) { R.blockFire[b] = 1; R.blockDirty = true; }
+    const es = Wd.cellEdges[c];
+    if (es) for (const eid of es) {
+      if (R.eburn[eid]++ === 0) {
+        R.closedDirty = true;
+        for (const a of R.eq[eid]) R.st[a] = ST.TRAPPED;
+        R.eq[eid] = [];
+      }
+    }
+    const hs = Wd.cellHomes[c];
+    if (hs) for (const h of hs) {
+      if (R.fireNear[h] < 0) R.fireNear[h] = R.t;
+      const s = R.st[h];
+      if (s === ST.UNAWARE || s === ST.PREPARING || s === ST.WAITING) R.st[h] = ST.ATRISK;
+    }
+  }
+
+  function stepFire(R) {
+    const Wd = R.world, rng = R.rng, fuel = Wd.fuel, sf = Wd.sf, wf = R.wf, fire = R.fire;
+    const pBase = FIRE.pBase, spotBase = FIRE.spot * (R.ws / 10) ** 2;
+    const newIgn = [], still = [];
+    R.burnCount.fill(0);
+    for (const c of R.burning) {
+      const x = c % W, y = (c / W) | 0;
+      R.burnCount[(y >> 2) * BW + (x >> 2)] += 1;
+      for (let k = 0; k < 8; k++) {
+        const nx = x + DIRS[k][0], ny = y + DIRS[k][1];
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const n = ny * W + nx;
+        if (fire[n] !== 0 || fuel[n] <= 0) continue;
+        if (rng() < pBase * fuel[n] * sf[c * 8 + k] * wf[k]) newIgn.push(n);
+      }
+      if (rng() < spotBase * fuel[c]) {
+        const ang = Math.atan2(R.wy, R.wx) + (rng() - 0.5) * 0.6, d = 3 + rng() * R.ws * FIRE.spotDist;
+        const sx = Math.round(x + Math.cos(ang) * d), sy = Math.round(y + Math.sin(ang) * d);
+        if (sx >= 0 && sy >= 0 && sx < W && sy < H) { const s = sy * W + sx; if (rng() < fuel[s] * 0.6) newIgn.push(s); }
+      }
+      if (--R.burnLeft[c] === 0) {
+        fire[c] = 2;
+        const es = Wd.cellEdges[c];
+        if (es) for (const eid of es) if (--R.eburn[eid] === 0) R.closedDirty = true;
+      } else still.push(c);
+    }
+    R.burning = still;
+    for (const n of newIgn) ignite(R, n);
+  }
+
+  function updateFireDist(R) {
+    const fd = R.fireDist; fd.fill(999); const q = [];
+    for (let b = 0; b < BW * BH; b++) if (R.blockFire[b]) { fd[b] = 0; q.push(b); }
+    for (let h = 0; h < q.length; h++) {
+      const b = q[h], x = b % BW, y = (b / BW) | 0;
+      for (let k = 0; k < 8; k++) {
+        const nx = x + DIRS[k][0], ny = y + DIRS[k][1];
+        if (nx < 0 || ny < 0 || nx >= BW || ny >= BH) continue;
+        const n = ny * BW + nx; if (fd[n] > fd[b] + 1) { fd[n] = fd[b] + 1; q.push(n); }
+      }
+    }
+    R.blockDirty = false;
+  }
+
+  function dijkstra(R, costFn, next) {
+    const Wd = R.world, nn = Wd.nodes.length, dist = new Float64Array(nn).fill(Infinity);
+    next.fill(-1);
+    const heap = [];
+    const push = (d, n) => { heap.push([d, n]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    for (const n of Wd.nodes) if (n.exit) { dist[n.id] = 0; push(0, n.id); }
+    while (heap.length) {
+      const [d, v] = pop(); if (d > dist[v]) continue;
+      for (const eid of Wd.nodes[v].inn) {
+        if (R.eburn[eid] > 0) continue;
+        const u = Wd.edges[eid].from, nd = d + costFn(eid);
+        if (nd < dist[u]) { dist[u] = nd; next[u] = eid; push(nd, u); }
+      }
+    }
+  }
+
+  function recomputeTrees(R, force) {
+    const Wd = R.world;
+    if (R.p.mode !== 'adaptive') { if (R.closedDirty || force) dijkstra(R, eid => Wd.edges[eid].tt * DT, R.nextRules); }
+    else dijkstra(R, eid => {
+      const e = Wd.edges[eid];
+      const bx = Math.floor(e.mx) >> 2, by = Math.floor(e.my) >> 2;
+      const fd = (bx >= 0 && by >= 0 && bx < BW && by < BH) ? R.fireDist[by * BW + bx] : 999;
+      return e.tt * DT + (R.eq[eid].length / R.ecap[eid]) * DT + (fd <= 1 ? 900 : fd === 2 ? 300 : 0);
+    }, R.nextAdapt);
+    R.closedDirty = false;
+  }
+
+  function sampleDelay(R, night) {
+    const med = night ? 20 : 14;
+    const z = Math.sqrt(-2 * Math.log(R.rng() + 1e-9)) * Math.cos(2 * Math.PI * R.rng());
+    return Math.round(Math.max(2, med * Math.exp(0.5 * z)) * 60 / DT);
+  }
+
+  function makeAware(R, h, fast, by) {
+    if (R.st[h] !== ST.UNAWARE) return;
+    R.st[h] = ST.PREPARING; R.awareBy[h] = by;
+    let d = sampleDelay(R, R.p.night);
+    if (fast) d = Math.min(d, Math.round((2 + R.rng() * 3) * 60 / DT));
+    R.departAt[h] = R.t + d;
+  }
+
+  function step(R) {
+    if (R.done) return;
+    const Wd = R.world, p = R.p, t = ++R.t;
+    stepFire(R);
+    if (t % 6 === 0 || R.blockDirty) { if (R.blockDirty) updateFireDist(R); }
+
+    // alerts
+    const detT = Math.round(p.detectMin * 60 / DT);
+    if (t >= detT && t % 3 === 0) {
+      for (let z = 0; z < ZONES.length; z++) {
+        if (R.zoneTrig[z] < 0) {
+          let trig = p.alertAll;
+          if (!trig) {
+            let md = 999; for (const b of Wd.zoneBlocks[z]) md = Math.min(md, R.fireDist[b]);
+            trig = md * BS * CELL <= p.trigKm * 1000;
+          }
+          if (trig) { R.zoneTrig[z] = t; R.zoneAlert[z] = t + Math.round(p.lagMin * 60 / DT); }
+        }
+        if (R.zoneAlert[z] >= 0 && t === R.zoneAlert[z]) {
+          R.alertLog.push({ zone: ZONES[z].id, t });
+          for (const h of Wd.homes) if (h.zone === z && R.getsAlert[h.id]) makeAware(R, h.id, false, 1);
+        }
+      }
+    }
+
+    // cue-based awareness
+    const adaptive = p.mode === 'adaptive', nightF = p.night ? 0.5 : 1;
+    for (const h of Wd.homes) {
+      if (R.st[h.id] !== ST.UNAWARE) continue;
+      const fd = R.fireDist[h.b];
+      if (fd <= 1 && R.rng() < 0.2 * nightF) { makeAware(R, h.id, true, 2); continue; }
+      if (adaptive) {
+        const rate = 0.35 * R.info[h.b] + 0.04 * Math.min(R.smoke[h.b], 20) + (fd <= 3 ? 0.15 : 0);
+        if (rate > 0 && R.rng() < (1 - Math.exp(-rate * DT / 60)) * nightF) makeAware(R, h.id, fd <= 3, 3);
+      }
+    }
+
+    // departures
+    for (const h of Wd.homes) {
+      if (R.st[h.id] === ST.PREPARING && t >= R.departAt[h.id]) {
+        R.st[h.id] = ST.WAITING; R.departT[h.id] = t;
+        R.nodeWait[h.node].push(h.id); R.waitNodes.add(h.node);
+        R.info[h.b] += 1;
+      }
+    }
+
+    if ((adaptive && t % 6 === 0) || R.closedDirty) recomputeTrees(R);
+    const next = adaptive ? R.nextAdapt : R.nextRules;
+
+    // node entries
+    for (const n of Array.from(R.waitNodes)) {
+      const wq = R.nodeWait[n];
+      let entries = 0;
+      while (wq.length && entries < 2) {
+        const a = wq[0];
+        if (R.st[a] !== ST.WAITING) { wq.shift(); continue; }
+        const ne = next[n]; if (ne < 0) break;
+        if (R.eburn[ne] > 0 || R.eq[ne].length >= R.estore[ne]) break;
+        wq.shift(); R.eq[ne].push(a); R.active.add(ne); R.exitT[a] = t + Wd.edges[ne].tt; R.st[a] = ST.ONROAD; entries++;
+      }
+      if (!wq.length) R.waitNodes.delete(n);
+    }
+
+    // link queues
+    for (const eid of Array.from(R.active)) {
+      const e = Wd.edges[eid], q = R.eq[e.id];
+      if (!q.length) { R.ebud[e.id] = 0; R.active.delete(eid); continue; }
+      R.ebud[e.id] = Math.min(R.ebud[e.id] + R.ecap[e.id], Math.max(1, R.ecap[e.id]));
+      const toNode = Wd.nodes[e.to];
+      while (q.length && R.exitT[q[0]] <= t && R.ebud[e.id] >= 1) {
+        const a = q[0];
+        if (toNode.exit) { q.shift(); R.st[a] = ST.SAFE; R.safeT[a] = t; R.ebud[e.id] -= 1; continue; }
+        const ne = next[e.to]; if (ne < 0) break;
+        if (R.eburn[ne] > 0 || R.eq[ne].length >= R.estore[ne]) break;
+        q.shift(); R.eq[ne].push(a); R.active.add(ne); R.exitT[a] = t + Wd.edges[ne].tt; R.ebud[e.id] -= 1;
+      }
+      let dl = 0; for (const a of q) if (R.exitT[a] < t) dl++;
+      R.edelay[e.id] += dl;
+    }
+
+    // fields
+    const f = Math.min(1, R.ws * DT / (BS * CELL));
+    const ns = new Float32Array(BW * BH);
+    for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) {
+      const sx = x - R.wx * f, sy = y - R.wy * f;
+      const x0 = Math.floor(sx), y0 = Math.floor(sy), fx = sx - x0, fy = sy - y0;
+      const g = (xx, yy) => (xx < 0 || yy < 0 || xx >= BW || yy >= BH) ? 0 : R.smoke[yy * BW + xx];
+      const v = g(x0, y0) * (1 - fx) * (1 - fy) + g(x0 + 1, y0) * fx * (1 - fy) + g(x0, y0 + 1) * (1 - fx) * fy + g(x0 + 1, y0 + 1) * fx * fy;
+      ns[y * BW + x] = v * 0.985 + R.burnCount[y * BW + x] * 0.08;
+    }
+    R.smoke = ns;
+    for (let b = 0; b < BW * BH; b++) R.info[b] *= 0.9885;
+    if (t % 6 === 0) {
+      const ni = new Float32Array(BW * BH);
+      for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) {
+        const b = y * BW + x; let s = R.info[b] * 0.6;
+        for (let k = 0; k < 4; k++) { const nx = x + DIRS[k][0], ny = y + DIRS[k][1]; if (nx >= 0 && ny >= 0 && nx < BW && ny < BH) s += R.info[ny * BW + nx] * 0.1; }
+        ni[b] = s;
+      }
+      R.info = ni;
+    }
+
+    if (t % 6 === 0) { const c = counts(R); R.series.push(c); if (c.onroad > R.peak) R.peak = c.onroad; }
+    const active = R.burning.length > 0;
+    let moving = false;
+    for (let h = 0; h < R.st.length; h++) { const s = R.st[h]; if (s === ST.PREPARING || s === ST.WAITING || s === ST.ONROAD) { moving = true; break; } }
+    if (t >= p.maxMin * 60 / DT || (!active && !moving)) R.done = true;
+  }
+
+  function counts(R) {
+    const c = [0, 0, 0, 0, 0, 0, 0];
+    for (let h = 0; h < R.st.length; h++) c[R.st[h]]++;
+    return { t: R.t, unaware: c[0], preparing: c[1], onroad: c[2] + c[3], safe: c[4], atrisk: c[5], trapped: c[6] };
+  }
+
+  function summary(R) {
+    const Wd = R.world, c = counts(R), safeTimes = [];
+    let threatened = 0, shadow = 0, departed = 0;
+    const zones = ZONES.map((z, i) => ({ id: z.id, foot: z.foot, homes: 0, threatened: 0, failed: 0,
+      orderMin: R.zoneAlert[i] >= 0 && R.zoneAlert[i] <= R.t ? R.zoneAlert[i] * DT / 60 : null }));
+    for (let h = 0; h < R.st.length; h++) {
+      const z = zones[Wd.homes[h].zone]; z.homes++;
+      if (R.safeT[h] >= 0) safeTimes.push(R.safeT[h]);
+      if (R.fireNear[h] >= 0) { threatened++; z.threatened++; }
+      if (R.st[h] === ST.ATRISK || R.st[h] === ST.TRAPPED) z.failed++;
+      if (R.departT[h] >= 0) {
+        departed++;
+        const za = R.zoneAlert[Wd.homes[h].zone];
+        if (za < 0 || R.departT[h] < za) shadow++;
+      }
+    }
+    safeTimes.sort((a, b) => a - b);
+    const t95 = safeTimes.length ? safeTimes[Math.floor(0.95 * (safeTimes.length - 1))] * DT / 60 : null;
+    let burned = 0; for (let i = 0; i < R.fire.length; i++) if (R.fire[i]) burned++;
+    const byRoad = {};
+    for (const e of Wd.edges) if (R.edelay[e.id] > 0) byRoad[e.name] = (byRoad[e.name] || 0) + R.edelay[e.id] * DT / 60;
+    const bottlenecks = Object.entries(byRoad).map(([name, vehMin]) => ({ name, vehMin })).sort((a, b) => b.vehMin - a.vehMin).slice(0, 4);
+    const orders = R.alertLog.map(a => a.t * DT / 60);
+    const failed = c.atrisk + c.trapped;
+    return Object.assign(c, { threatened, failed, pctThreatened: threatened ? failed / threatened : 0, t95,
+      burnedHa: burned * CELL * CELL / 10000, homes: R.st.length, shadow, departed, peak: R.peak,
+      firstOrderMin: orders.length ? Math.min(...orders) : null, bottlenecks,
+      zones: zones.sort((a, b) => (b.failed / b.homes) - (a.failed / a.homes) || b.threatened - a.threatened) });
+  }
+
+  function runToEnd(R) { while (!R.done) step(R); return summary(R); }
+
+  function randomIgnition(world, rng) {
+    if (world.ignCandidates) { const c = world.ignCandidates[Math.floor(rng() * world.ignCandidates.length)]; return { x: c % W, y: (c / W) | 0 }; }
+    for (;;) {
+      const x = 8 + Math.floor(rng() * 144), y = 14 + Math.floor(rng() * 26), c = y * W + x;
+      if (world.lu[c] === LU.CHAP) return { x, y };
+    }
+  }
+
+  return { setDims, setZones, zones: () => ZONES, FIRE, W, H, CELL, DT, BS, BW, BH, LU, ST, ZONES, LINES, buildWorld, newRun, step, runToEnd, summary, counts, randomIgnition, mulberry32, DEFAULTS };
+})();
+if (typeof module !== 'undefined') module.exports = Sim;
+
+</script>
+<script>
+const RealWorld = (function () {
+  const CELL = 50, BS = 4, DT = 10;
+  const DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  const LU = { OCEAN: 0, BEACH: 1, URBAN: 2, WUI: 3, CHAP: 4, GRASS: 5, AG: 6, BARE: 7 };
+  const CLS = { motorway: 'hwy', motorway_link: 'hwy', trunk: 'hwy', trunk_link: 'hwy', primary: 'art', primary_link: 'art',
+    secondary: 'art', secondary_link: 'art', tertiary: 'urban', tertiary_link: 'urban', unclassified: 'local', residential: 'local', living_street: 'local' };
+  const MPH = { motorway: 65, motorway_link: 35, trunk: 55, trunk_link: 35, primary: 40, primary_link: 30, secondary: 35, secondary_link: 30,
+    tertiary: 30, tertiary_link: 25, unclassified: 25, residential: 25, living_street: 15 };
+  const RANK = { hwy: 3, art: 2, urban: 1, local: 0 };
+  const PRETTY = { motorway: 'Freeway', trunk: 'Highway', primary: 'Primary road', secondary: 'Secondary road', tertiary: 'Collector road',
+    unclassified: 'Local road', residential: 'Residential street', living_street: 'Residential lane' };
+
+  function makeGrid(bbox) {
+    const lat0 = (bbox.s + bbox.n) / 2;
+    const dLon = CELL / (111320 * Math.cos(lat0 * Math.PI / 180)), dLat = CELL / 110540;
+    const W = Math.ceil((bbox.e - bbox.w) / dLon / BS) * BS, H = Math.ceil((bbox.n - bbox.s) / dLat / BS) * BS;
+    return { bbox, dLon, dLat, W, H,
+      toGrid: (lat, lon) => [(lon - bbox.w) / dLon, (bbox.n - lat) / dLat],
+      toLatLng: (gx, gy) => [bbox.n - gy * dLat, bbox.w + gx * dLon] };
+  }
+
+  function overpassQuery(b) {
+    return `[out:json][timeout:120];way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street)$"](${b.s},${b.w},${b.n},${b.e});(._;>;);out body;`;
+  }
+
+  // Terrarium elevation tiles
+  const lon2tile = (lon, z) => (lon + 180) / 360 * 2 ** z;
+  const lat2tile = (lat, z) => { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z; };
+  function terrariumTiles(b, z) {
+    const x0 = Math.floor(lon2tile(b.w, z)), x1 = Math.floor(lon2tile(b.e, z));
+    const y0 = Math.floor(lat2tile(b.n, z)), y1 = Math.floor(lat2tile(b.s, z));
+    const out = []; for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) out.push({ z, x, y });
+    return out;
+  }
+  // tiles: [{z,x,y,data:Uint8ClampedArray(256*256*4)}]
+  function makeElevSampler(tiles) {
+    const map = new Map(tiles.map(t => [t.x + ',' + t.y, t]));
+    const z = tiles[0].z;
+    return (lat, lon) => {
+      const fx = lon2tile(lon, z), fy = lat2tile(lat, z), tx = Math.floor(fx), ty = Math.floor(fy);
+      const t = map.get(tx + ',' + ty); if (!t) return 0;
+      const px = Math.min(255, Math.floor((fx - tx) * 256)), py = Math.min(255, Math.floor((fy - ty) * 256)), i = (py * 256 + px) * 4;
+      return (t.data[i] * 256 + t.data[i + 1] + t.data[i + 2] / 256) - 32768;
+    };
+  }
+
+  function parseMaxspeed(v) {
+    if (!v) return null; const m = /([\d.]+)\s*(mph)?/.exec(v); if (!m) return null;
+    const n = parseFloat(m[1]); return m[2] ? n * 0.44704 : n / 3.6;
+  }
+
+  function build(osm, grid, elevFn, opts) {
+    opts = opts || {};
+    const spacing = opts.homeSpacing || 60, Sim = opts.Sim, rng = Sim.mulberry32(opts.seed || 11);
+    const W = grid.W, H = grid.H, N = W * H, BW = W / BS, BH = H / BS;
+    const inside = (gx, gy) => gx >= 0 && gy >= 0 && gx < W && gy < H;
+    const MG = opts.netMargin == null ? 40 : opts.netMargin;   // network extends ~2 km beyond the study box
+    const inNet = (gx, gy) => gx >= -MG && gy >= -MG && gx < W + MG && gy < H + MG;
+
+    // elevation
+    const elev = new Float32Array(N);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const [lat, lon] = grid.toLatLng(x + 0.5, y + 0.5); elev[y * W + x] = elevFn(lat, lon); }
+
+    // parse OSM
+    const nll = new Map(); const ways = [];
+    for (const el of osm.elements) {
+      if (el.type === 'node') nll.set(el.id, [el.lat, el.lon]);
+      else if (el.type === 'way' && el.tags && CLS[el.tags.highway]) ways.push(el);
+    }
+    const use = new Map();
+    for (const w of ways) w.nodes.forEach((id, i) => use.set(id, (use.get(id) || 0) + ((i === 0 || i === w.nodes.length - 1) ? 2 : 1)));
+
+    const nodes = [], edges = [], gidx = new Map();
+    function gnode(id, gx, gy) {
+      let g = gidx.get(id);
+      if (g === undefined) { g = nodes.length; gidx.set(id, g); nodes.push({ id: g, x: gx, y: gy, out: [], inn: [], exit: false, local: false, boundary: 0, nb: new Set() }); }
+      return g;
+    }
+    function addEdge(a, b, pts, spec) {
+      let len = 0; const cum = [0];
+      for (let i = 1; i < pts.length; i++) { len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]) * CELL; cum.push(len); }
+      if (len < 1) return null;
+      const e = { id: edges.length, from: a, to: b, len, lanes: spec.lanes, speed: spec.speed, type: spec.type, name: spec.name, cls: spec.cls, pts, cum,
+        cells: [], mx: pts[pts.length >> 1][0], my: pts[pts.length >> 1][1] };
+      edges.push(e); nodes[a].out.push(e.id); nodes[b].inn.push(e.id); nodes[a].nb.add(b); nodes[b].nb.add(a);
+      return e;
+    }
+    for (const w of ways) {
+      const t = w.tags, hw = t.highway, type = CLS[hw];
+      const ow = t.oneway === 'yes' || t.oneway === '1' || t.oneway === 'true' || hw === 'motorway' || hw === 'motorway_link' || t.junction === 'roundabout';
+      const rev = t.oneway === '-1';
+      let lanes = parseInt(t.lanes, 10);
+      if (!(lanes > 0)) lanes = (hw === 'motorway' || hw === 'trunk') ? (ow ? 2 : 4) : (ow ? 1 : 2);
+      const perDir = ow || rev ? lanes : Math.max(1, Math.round(lanes / 2));
+      const speed = parseMaxspeed(t.maxspeed) || MPH[hw] * 0.44704;
+      const spec = { lanes: Math.max(1, Math.min(4, perDir)), speed, type, cls: hw, name: t.name || t.ref || PRETTY[hw.replace('_link', '')] || 'Road' };
+      if (t.ref && t.name && (type === 'hwy')) spec.name = `${t.name} (${t.ref})`;
+      let seg = [], prevIn = null;
+      const emit = () => {
+        if (seg.length < 2) return;
+        const a = gnode(seg[0].id, seg[0].gx, seg[0].gy), b = gnode(seg[seg.length - 1].id, seg[seg.length - 1].gx, seg[seg.length - 1].gy);
+        if (a === b) return;
+        const pts = seg.map(p => [p.gx, p.gy]);
+        if (!rev) addEdge(a, b, pts, spec);
+        if (!ow || rev) addEdge(b, a, pts.slice().reverse(), spec);
+      };
+      for (let i = 0; i < w.nodes.length; i++) {
+        const id = w.nodes[i], ll = nll.get(id); if (!ll) continue;
+        const [gx, gy] = grid.toGrid(ll[0], ll[1]), inn = inNet(gx, gy);
+        if (!inn) {
+          if (prevIn && seg.length) { const last = seg[seg.length - 1]; const g = gnode(last.id, last.gx, last.gy); nodes[g].boundary = Math.max(nodes[g].boundary, RANK[type] + 1); }
+          emit(); seg = []; prevIn = false; continue;
+        }
+        seg.push({ id, gx, gy });
+        if (prevIn === false && seg.length === 1) { const g = gnode(id, gx, gy); nodes[g].boundary = Math.max(nodes[g].boundary, RANK[type] + 1); }
+        prevIn = true;
+        if (seg.length > 1 && use.get(id) > 1) { emit(); seg = [seg[seg.length - 1]]; }
+      }
+      emit();
+    }
+
+    // exits: boundary nodes on highways/arterials, else any boundary
+    const major = n => n.out.concat(n.inn).some(id => RANK[edges[id].type] >= RANK.art);
+    const nearEdge = n => n.x < 6 || n.y < 6 || n.x >= W - 6 || n.y >= H - 6;
+    let ex = nodes.filter(n => n.boundary >= RANK.art + 1 || (n.nb.size === 1 && major(n) && nearEdge(n)));
+    if (!ex.length) ex = nodes.filter(n => n.boundary > 0 || (n.nb.size === 1 && nearEdge(n)));
+    for (const n of ex) n.exit = true;
+
+    // distance to exit (free flow, reverse Dijkstra)
+    const distExit = new Float64Array(nodes.length).fill(Infinity);
+    { const heap = []; const push = (d, n) => { heap.push([d, n]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+      const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+      for (const n of nodes) if (n.exit) { distExit[n.id] = 0; push(0, n.id); }
+      while (heap.length) { const [d, v] = pop(); if (d > distExit[v]) continue; for (const eid of nodes[v].inn) { const e = edges[eid], nd = d + e.len / e.speed; if (nd < distExit[e.from]) { distExit[e.from] = nd; push(nd, e.from); } } } }
+
+    // rasterize edges
+    const road = new Uint8Array(N), resRoad = new Uint8Array(N), cellEdges = {};
+    for (const e of edges) {
+      const set = new Set();
+      for (let i = 1; i < e.pts.length; i++) {
+        const [x0, y0] = e.pts[i - 1], [x1, y1] = e.pts[i], n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2));
+        for (let k = 0; k <= n; k++) { const cx = Math.floor(x0 + (x1 - x0) * k / n), cy = Math.floor(y0 + (y1 - y0) * k / n); if (inside(cx, cy)) set.add(cy * W + cx); }
+      }
+      e.cells = Array.from(set);
+      for (const c of e.cells) { road[c] = 1; if (e.type !== 'hwy') resRoad[c] = 1; (cellEdges[c] = cellEdges[c] || []).push(e.id); }
+      e.tt = Math.max(1, Math.round(e.len / e.speed / DT));
+    }
+
+    // land cover from terrain + street density
+    const R = 4, integ = new Float64Array((W + 1) * (H + 1));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) integ[(y + 1) * (W + 1) + x + 1] = resRoad[y * W + x] + integ[y * (W + 1) + x + 1] + integ[(y + 1) * (W + 1) + x] - integ[y * (W + 1) + x];
+    const dens = (x, y) => { const x0 = Math.max(0, x - R), x1 = Math.min(W, x + R + 1), y0 = Math.max(0, y - R), y1 = Math.min(H, y + R + 1);
+      return (integ[y1 * (W + 1) + x1] - integ[y0 * (W + 1) + x1] - integ[y1 * (W + 1) + x0] + integ[y0 * (W + 1) + x0]) / ((x1 - x0) * (y1 - y0)); };
+    const bl = opts.buildings, useB = bl && bl.all && bl.all.length > 50;
+    let bdens = null;
+    if (useB) {
+      const bc = new Float64Array((W + 1) * (H + 1)), cnt = new Float32Array(N);
+      for (const b of bl.all) { const [gx, gy] = grid.toGrid(b.lat, b.lon), x = Math.floor(gx), y = Math.floor(gy); if (inside(x, y)) cnt[y * W + x]++; }
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) bc[(y + 1) * (W + 1) + x + 1] = cnt[y * W + x] + bc[y * (W + 1) + x + 1] + bc[(y + 1) * (W + 1) + x] - bc[y * (W + 1) + x];
+      bdens = (x, y) => { const x0 = Math.max(0, x - R), x1 = Math.min(W, x + R + 1), y0 = Math.max(0, y - R), y1 = Math.min(H, y + R + 1);
+        return (bc[y1 * (W + 1) + x1] - bc[y0 * (W + 1) + x1] - bc[y1 * (W + 1) + x0] + bc[y0 * (W + 1) + x0]) / ((x1 - x0) * (y1 - y0) * 0.25); };
+    }
+    const lu = new Uint8Array(N), fuel = new Float32Array(N);
+    const lcR = new Uint8Array(N), luR = new Uint8Array(N);
+    let lcCells = 0, luCells = 0;
+    if (opts.landcover && opts.landcover.length) lcCells = rasterize(finestLod(opts.landcover), grid, W, H, p => LC_CODE[p.subtype] || 0, lcR);
+    if (opts.landuse && opts.landuse.length) luCells = rasterize(opts.landuse, grid, W, H, luCode, luR);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = y * W + x, e = elev[c], d = dens(x, y), lcv = lcR[c], veg = LC_FUEL[lcv];
+      if (e < 0.5) { lu[c] = LU.OCEAN; fuel[c] = 0; continue; }
+      const urban = (useB ? bdens(x, y) >= 4 || d > 0.13 : d > 0.13) && e < 150;
+      const wui = useB ? bdens(x, y) >= 0.6 : d > 0.035;
+      if (urban) { lu[c] = LU.URBAN; fuel[c] = Sim.FIRE.urban + 0.06 * rng(); }
+      else if (wui) { lu[c] = LU.WUI; fuel[c] = veg != null ? 0.35 + 0.45 * veg + 0.06 * rng() : 0.6 + 0.12 * rng(); }
+      else if (lcv) {
+        if (lcv === 1 || lcv === 2) { lu[c] = LU.CHAP; fuel[c] = veg * (0.88 + 0.12 * rng()); }
+        else if (lcv === 3 || lcv === 7) { lu[c] = LU.GRASS; fuel[c] = veg * (0.9 + 0.1 * rng()); }
+        else if (lcv === 4) { lu[c] = LU.AG; fuel[c] = veg; }
+        else if (lcv === 5) { lu[c] = LU.BARE; fuel[c] = veg; }
+        else { lu[c] = LU.URBAN; fuel[c] = veg; }
+      }
+      else if (e > 60) { lu[c] = LU.CHAP; fuel[c] = 0.85 + 0.15 * rng(); }
+      else { lu[c] = LU.CHAP; fuel[c] = 0.45 + 0.1 * rng(); }
+      const luv = luR[c];
+      if (luv === 1 && lu[c] !== LU.URBAN) { lu[c] = LU.GRASS; fuel[c] = 0.12; }
+      else if (luv === 2 && lu[c] !== LU.URBAN && lu[c] !== LU.WUI) { lu[c] = LU.AG; fuel[c] = 0.3; }
+    }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = y * W + x; if (lu[c] === LU.OCEAN || elev[c] > 4) continue;
+      let nearSea = false; for (let dy = -2; dy <= 2 && !nearSea; dy++) for (let dx = -2; dx <= 2; dx++) { const xx = x + dx, yy = y + dy; if (inside(xx, yy) && lu[yy * W + xx] === LU.OCEAN) { nearSea = true; break; } }
+      if (nearSea && !road[c]) { lu[c] = LU.BEACH; fuel[c] = 0.03; }
+    }
+    for (let c = 0; c < N; c++) if (road[c]) fuel[c] *= 0.35;
+
+    const homes = [];
+    let agentWeight = 1, homeSource = 'streets', totalHH = 0;
+    if (bl && bl.homes && bl.homes.length) {
+      homeSource = 'buildings';
+      const maxAgents = opts.maxAgents || 12000;
+      const inBox = bl.homes.filter(b => { const [gx, gy] = grid.toGrid(b.lat, b.lon); return inside(Math.floor(gx), Math.floor(gy)); });
+      totalHH = inBox.reduce((a, b) => a + b.hh, 0);
+      agentWeight = Math.max(1, totalHH / maxAgents);
+      const bucket = new Map();
+      for (const n of nodes) { if (n.exit || !inside(n.x, n.y) || !isFinite(distExit[n.id]) || !(n.out.some(id => edges[id].type !== 'hwy'))) continue; const k = ((n.y >> 2) * BW + (n.x >> 2)); (bucket.get(k) || bucket.set(k, []).get(k)).push(n.id); }
+      const nearest = (gx, gy) => {
+        const bx = Math.floor(gx) >> 2, by = Math.floor(gy) >> 2; let best = -1, bd = Infinity;
+        for (let r = 0; r <= 10; r++) {
+          for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+            const x = bx + dx, y = by + dy; if (x < 0 || y < 0 || x >= BW || y >= BH) continue;
+            const ls = bucket.get(y * BW + x); if (!ls) continue;
+            for (const id of ls) { const d = (nodes[id].x - gx) ** 2 + (nodes[id].y - gy) ** 2; if (d < bd) { bd = d; best = id; } }
+          }
+          if (best >= 0 && r >= 1) break;
+        }
+        return best;
+      };
+      for (const b of inBox) {
+        const [gx, gy] = grid.toGrid(b.lat, b.lon), hx = Math.floor(gx), hy = Math.floor(gy);
+        if (lu[hy * W + hx] === LU.OCEAN) continue;
+        const ex = b.hh / agentWeight; let n = Math.floor(ex); if (rng() < ex - n) n++;
+        if (!n) continue;
+        const node = nearest(gx, gy); if (node < 0) continue;
+        const e0 = nodes[node].out.map(id => edges[id]).find(e => e.type !== 'hwy');
+        for (let k = 0; k < n; k++) {
+          const fx = gx + (k ? (rng() - 0.5) * 0.3 : 0), fy = gy + (k ? (rng() - 0.5) * 0.3 : 0);
+          homes.push({ id: homes.length, x: hx, y: hy, fx, fy, c: hy * W + hx, node, zone: -1, spur: false, b: (hy >> 2) * BW + (hx >> 2), road: e0 ? e0.name : 'local street' });
+        }
+      }
+    }
+    // otherwise, homes along residential and collector streets
+    if (homeSource === 'streets') for (const e of edges) {
+      if (e.type !== 'local' && e.type !== 'urban') continue;
+      const twin = nodes[e.to].out.find(id => edges[id].to === e.from && edges[id].name === e.name);
+      if (twin !== undefined && twin < e.id) continue;
+      const nh = Math.floor(e.len / spacing);
+      for (let k = 0; k < nh; k++) {
+        const s = (k + 0.5 + (rng() - 0.5) * 0.6) * e.len / Math.max(1, nh);
+        let i = 1; while (i < e.cum.length - 1 && e.cum[i] < s) i++;
+        const [x0, y0] = e.pts[i - 1], [x1, y1] = e.pts[i], seg = e.cum[i] - e.cum[i - 1] || 1, f = (s - e.cum[i - 1]) / seg;
+        const px = x0 + (x1 - x0) * f, py = y0 + (y1 - y0) * f, l = Math.hypot(x1 - x0, y1 - y0) || 1, side = k % 2 ? 1 : -1;
+        const fx = px + side * (-(y1 - y0) / l) * 0.45, fy = py + side * ((x1 - x0) / l) * 0.45;
+        const hx = Math.floor(fx), hy = Math.floor(fy);
+        if (!inside(hx, hy) || lu[hy * W + hx] === LU.OCEAN) continue;
+        let node = s < e.len / 2 ? e.from : e.to;
+        if (!isFinite(distExit[node])) node = node === e.from ? e.to : e.from;
+        if (!isFinite(distExit[node]) || nodes[node].exit || !inside(nodes[node].x, nodes[node].y)) continue;
+        homes.push({ id: homes.length, x: hx, y: hy, fx, fy, c: hy * W + hx, node, zone: -1, spur: false, b: (hy >> 2) * BW + (hx >> 2), road: e.name });
+      }
+    }
+    for (const n of nodes) { n.local = n.out.some(id => edges[id].type !== 'hwy') || n.inn.some(id => edges[id].type !== 'hwy'); }
+    for (const h of homes) h.spur = nodes[h.node].nb.size === 1;
+
+    // zones: 2 km grid
+    const ZS = 40, zmap = new Map(), zones = [];
+    for (const h of homes) {
+      const r = Math.floor(h.y / ZS), q = Math.floor(h.x / ZS), key = r + ',' + q;
+      if (!zmap.has(key)) { zmap.set(key, zones.length); zones.push({ id: String.fromCharCode(65 + r) + (q + 1), r, q, n: 0, wui: 0, sx: 0, sy: 0 }); }
+      const z = zmap.get(key); h.zone = z; const Z = zones[z]; Z.n++; Z.sx += h.fx; Z.sy += h.fy; if (lu[h.c] === LU.WUI || lu[h.c] === LU.CHAP) Z.wui++;
+    }
+    for (const z of zones) { z.foot = z.wui / z.n > 0.5; z.cx = z.sx / z.n; z.cy = z.sy / z.n; }
+
+    // derived indexes
+    const cellHomes = {};
+    for (const h of homes) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const x = h.x + dx, y = h.y + dy; if (!inside(x, y)) continue; const c = y * W + x; (cellHomes[c] = cellHomes[c] || []).push(h.id);
+    }
+    const zoneBlocks = zones.map(() => new Set()); for (const h of homes) zoneBlocks[h.zone].add(h.b);
+    const sf = new Float32Array(N * 8);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = y * W + x;
+      for (let k = 0; k < 8; k++) {
+        const nx = x + DIRS[k][0], ny = y + DIRS[k][1]; if (!inside(nx, ny)) continue;
+        const s = (elev[ny * W + nx] - elev[c]) / (k < 4 ? CELL : CELL * Math.SQRT2);
+        sf[c * 8 + k] = Math.exp(Math.max(-1.5, Math.min(1.5, 3 * s)));
+      }
+    }
+    // ignition candidates: wildland cells within ~3 km of homes
+    const hb = new Int16Array(BW * BH).fill(999), q = [];
+    for (const h of homes) if (hb[h.b] !== 0) { hb[h.b] = 0; q.push(h.b); }
+    for (let i = 0; i < q.length; i++) { const b = q[i], x = b % BW, y = (b / BW) | 0; for (let k = 0; k < 8; k++) { const nx = x + DIRS[k][0], ny = y + DIRS[k][1]; if (nx < 0 || ny < 0 || nx >= BW || ny >= BH) continue; const n = ny * BW + nx; if (hb[n] > hb[b] + 1) { hb[n] = hb[b] + 1; q.push(n); } } }
+    const ignCandidates = [];
+    for (let c = 0; c < N; c++) { if (lu[c] !== LU.CHAP || fuel[c] < 0.8) continue; const x = c % W, y = (c / W) | 0, d = hb[(y >> 2) * BW + (x >> 2)]; if (d >= 2 && d <= 15) ignCandidates.push(c); }
+    if (!ignCandidates.length) for (let c = 0; c < N; c++) { const x = c % W, y = (c / W) | 0, d = hb[(y >> 2) * BW + (x >> 2)]; if (fuel[c] >= 0.45 && lu[c] !== LU.URBAN && d >= 1 && d <= 15) ignCandidates.push(c); }
+
+    return { W, H, CELL, BS, BW, BH, elev, lu, fuel, road, nodes, edges, homes, cellHomes, cellEdges, zoneBlocks, sf, zones, distExit, ignCandidates, grid, agentWeight, homeSource,
+      stats: { ways: ways.length, nodes: nodes.length, edges: edges.length, homes: homes.length, zones: zones.length, exits: nodes.filter(n => n.exit).length, households: totalHH || homes.length, landcoverShare: lcR.reduce((a, v) => a + (v ? 1 : 0), 0) / N, landuseCells: luR.reduce((a, v) => a + (v ? 1 : 0), 0) } };
+  }
+
+  // Parse an OSM export: Overpass JSON, OSM XML, or GeoJSON (e.g. from overpass-turbo)
+  function parseOsm(text) {
+    const t = text.trim();
+    if (t[0] === '<') return fromXml(t);
+    const j = JSON.parse(t);
+    if (Array.isArray(j.elements)) return j;
+    if (j.type === 'FeatureCollection') return fromGeoJson(j);
+    throw new Error('the file is not Overpass JSON, OSM XML or GeoJSON');
+  }
+  function fromXml(t) {
+    const doc = new DOMParser().parseFromString(t, 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error('the XML file could not be read');
+    const els = [];
+    for (const n of doc.getElementsByTagName('node')) els.push({ type: 'node', id: +n.getAttribute('id'), lat: +n.getAttribute('lat'), lon: +n.getAttribute('lon') });
+    for (const w of doc.getElementsByTagName('way')) {
+      const nodes = Array.from(w.getElementsByTagName('nd')).map(nd => +nd.getAttribute('ref')), tags = {};
+      for (const tg of w.getElementsByTagName('tag')) tags[tg.getAttribute('k')] = tg.getAttribute('v');
+      els.push({ type: 'way', id: +w.getAttribute('id'), nodes, tags });
+    }
+    return { elements: els };
+  }
+  function fromGeoJson(g) {
+    const ids = new Map(), els = []; let next = 1;
+    const nid = (lon, lat) => { const k = lon.toFixed(7) + ',' + lat.toFixed(7); let id = ids.get(k); if (!id) { id = next++; ids.set(k, id); els.push({ type: 'node', id, lat, lon }); } return id; };
+    for (const f of g.features || []) {
+      const p = f.properties || {}, tags = p.tags || p; if (!f.geometry || !tags.highway) continue;
+      const lines = f.geometry.type === 'LineString' ? [f.geometry.coordinates] : f.geometry.type === 'MultiLineString' ? f.geometry.coordinates : [];
+      for (const line of lines) els.push({ type: 'way', id: next++, nodes: line.map(([lon, lat]) => nid(lon, lat)), tags });
+    }
+    return { elements: els };
+  }
+
+  // ---------- Overture Maps ----------
+  const jp = v => { if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return v; } } return v; };
+  function parseFeatures(text) {
+    const t = text.trim();
+    if (t[0] === '<') return { osm: fromXml(t) };
+    if (t[0] === '{' || t[0] === '[') {
+      try {
+        const j = JSON.parse(t);
+        if (Array.isArray(j.elements)) return { osm: j };
+        if (j.type === 'FeatureCollection') return { features: j.features || [] };
+        if (j.type === 'Feature') return { features: [j] };
+        if (Array.isArray(j)) return { features: j.filter(f => f && f.type === 'Feature') };
+      } catch (e) { /* may be GeoJSONSeq */ }
+    }
+    const feats = [];
+    for (const line of t.split(/\r?\n/)) {
+      const l = line.replace(/^\x1e/, '').trim(); if (!l) continue;
+      const f = JSON.parse(l); if (f.type === 'Feature') feats.push(f); else if (f.type === 'FeatureCollection') feats.push(...f.features);
+    }
+    if (!feats.length) throw new Error('no GeoJSON features found');
+    return { features: feats };
+  }
+  const LC_SUB = new Set(['forest', 'shrub', 'grass', 'crop', 'barren', 'urban', 'wetland', 'mangrove', 'moss', 'snow']);
+  const BLD_HINT = ['height', 'num_floors', 'has_parts', 'roof_shape', 'facade_color', 'is_underground', 'min_height', 'level'];
+  function roughArea(g) {
+    const ring = g.type === 'Polygon' ? g.coordinates[0] : g.type === 'MultiPolygon' ? g.coordinates[0][0] : null; if (!ring) return 0;
+    let w = Infinity, e = -Infinity, s = Infinity, n = -Infinity; for (const [x, y] of ring) { if (x < w) w = x; if (x > e) e = x; if (y < s) s = y; if (y > n) n = y; }
+    return (e - w) * 92000 * (n - s) * 110540;
+  }
+  function kindOf(features) {
+    let seg = 0, poly = 0, pt = 0, lc = 0, luT = 0, bT = 0, bHint = 0; const areas = [];
+    for (const f of features.slice(0, 800)) {
+      const g = f.geometry && f.geometry.type, p = f.properties || {};
+      if ((g === 'LineString' || g === 'MultiLineString') && (p.subtype === 'road' || p.class || p.highway)) seg++;
+      else if (g === 'Polygon' || g === 'MultiPolygon') {
+        poly++; areas.push(roughArea(f.geometry));
+        if (p.type === 'land_cover' || (LC_SUB.has(p.subtype) && !p.class)) lc++;
+        if (p.type === 'land_use') luT++;
+        if (p.type === 'building') bT++;
+        if (BLD_HINT.some(k => p[k] != null)) bHint++;
+      } else if (g === 'Point') pt++;
+    }
+    if (seg && seg >= poly && seg >= pt) return 'segments';
+    if (poly && poly >= pt) {
+      if (lc > poly * 0.6) return 'landcover';
+      if (luT > poly * 0.6) return 'landuse';
+      if (bT > poly * 0.6 || bHint > poly * 0.2) return 'buildings';
+      areas.sort((a, b) => a - b);
+      return areas[areas.length >> 1] > 5000 ? 'landuse' : 'buildings';
+    }
+    return pt ? 'points' : 'unknown';
+  }
+  // Keep only the finest level of detail when Overture ships several (cartography.max_zoom / min_zoom)
+  function finestLod(features) {
+    const zoomOf = f => { const c = jp((f.properties || {}).cartography); return c && typeof c === 'object' ? (c.max_zoom != null ? c.max_zoom : c.min_zoom) : null; };
+    let best = null; for (const f of features) { const z = zoomOf(f); if (z != null && (best == null || z > best)) best = z; }
+    return best == null ? features : features.filter(f => { const z = zoomOf(f); return z == null || z === best; });
+  }
+  // Scanline fill of polygon features onto the grid; valueFn(props) returns a code > 0 or 0 to skip
+  function rasterize(features, grid, W, H, valueFn, target) {
+    let n = 0;
+    for (const f of features) {
+      const g = f.geometry; if (!g) continue;
+      const v = valueFn(f.properties || {}); if (!v) continue;
+      const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+      for (const poly of polys) {
+        const rings = poly.map(r => r.map(([lon, lat]) => grid.toGrid(lat, lon)));
+        let y0 = Infinity, y1 = -Infinity;
+        for (const r of rings) for (const p of r) { if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+        const ya = Math.max(0, Math.ceil(y0 - 0.5)), yb = Math.min(H - 1, Math.floor(y1 - 0.5));
+        for (let y = ya; y <= yb; y++) {
+          const cy = y + 0.5, xs = [];
+          for (const r of rings) for (let i = 0; i < r.length - 1; i++) {
+            const a = r[i], b = r[i + 1];
+            if ((a[1] <= cy) !== (b[1] <= cy)) xs.push(a[0] + (cy - a[1]) / (b[1] - a[1]) * (b[0] - a[0]));
+          }
+          xs.sort((a, b) => a - b);
+          for (let k = 0; k + 1 < xs.length; k += 2) {
+            const xa = Math.max(0, Math.ceil(xs[k] - 0.5)), xb = Math.min(W - 1, Math.floor(xs[k + 1] - 0.5));
+            for (let x = xa; x <= xb; x++) { target[y * W + x] = v; n++; }
+          }
+        }
+      }
+    }
+    return n;
+  }
+  const LC_CODE = { forest: 1, shrub: 2, grass: 3, crop: 4, barren: 5, moss: 5, snow: 5, urban: 6, wetland: 7, mangrove: 7 };
+  const LC_FUEL = [null, 0.9, 1.0, 0.6, 0.3, 0.05, 0.15, 0.2];
+  const LU_IRR = new Set(['park', 'golf_course', 'golf', 'cemetery', 'pitch', 'playground', 'recreation_ground', 'garden', 'village_green', 'stadium', 'sports_centre', 'dog_park', 'grass']);
+  const LU_AG = new Set(['agriculture', 'horticulture', 'farmland', 'orchard', 'vineyard', 'plant_nursery', 'greenhouse_horticulture', 'allotments', 'farmyard']);
+  const luCode = p => (LU_IRR.has(p.class) || (LU_IRR.has(p.subtype) && !LU_AG.has(p.class))) ? 1 : (LU_AG.has(p.class) || LU_AG.has(p.subtype)) ? 2 : 0;
+
+  const OV_CLASS = { motorway: 1, trunk: 1, primary: 1, secondary: 1, tertiary: 1, residential: 1, living_street: 1, unclassified: 1 };
+  function fromOverture(features) {
+    const ids = new Map(), els = []; let next = 1;
+    const nid = (lon, lat) => { const k = lon.toFixed(7) + ',' + lat.toFixed(7); let id = ids.get(k); if (!id) { id = next++; ids.set(k, id); els.push({ type: 'node', id, lat, lon }); } return id; };
+    for (const f of features) {
+      const p = f.properties || {}, g = f.geometry; if (!g) continue;
+      let tags;
+      if (p.highway) tags = p;                       // OSM-style GeoJSON
+      else {
+        if (p.subtype && p.subtype !== 'road') continue;
+        if (!OV_CLASS[p.class]) continue;
+        const hw = p.subclass === 'link' && ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'].includes(p.class) ? p.class + '_link' : p.class;
+        tags = { highway: hw };
+        const names = jp(p.names);
+        const nm = names && (names.primary || (names.common && (names.common.en || Object.values(names.common)[0])));
+        if (nm) tags.name = nm;
+        const routes = jp(p.routes); if (Array.isArray(routes) && routes.length && (routes[0].ref || routes[0].name)) tags.ref = routes[0].ref || routes[0].name;
+        const sl = jp(p.speed_limits);
+        if (Array.isArray(sl)) for (const s of sl) { const m = s && (s.max_speed || s.maxSpeed); if (m && m.value) { tags.maxspeed = m.value + (m.unit === 'mph' ? ' mph' : ''); break; } }
+        const ar = jp(p.access_restrictions);
+        if (Array.isArray(ar)) for (const a of ar) {
+          if (a && a.access_type === 'denied' && a.when && a.when.heading && Object.keys(a.when).length === 1) tags.oneway = a.when.heading === 'backward' ? 'yes' : '-1';
+        }
+      }
+      const lines = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
+      for (const line of lines) if (line.length > 1) els.push({ type: 'way', id: next++, nodes: line.map(([lon, lat]) => nid(lon, lat)), tags });
+    }
+    return { elements: els };
+  }
+  const RES_CLS = new Set(['house', 'detached', 'apartments', 'residential', 'semidetached_house', 'terrace', 'bungalow', 'dormitory', 'cabin', 'static_caravan', 'farm', 'hut', 'trullo', 'stilt_house', 'houseboat']);
+  const NON_CLS = new Set(['garage', 'garages', 'shed', 'carport', 'roof', 'greenhouse', 'barn', 'storage_tank', 'parking', 'hangar', 'industrial', 'commercial', 'retail', 'warehouse', 'office', 'school', 'church', 'hospital', 'kindergarten', 'university', 'hotel', 'civic', 'public', 'service', 'transportation', 'toilets', 'boathouse', 'silo']);
+  function buildingsFromOverture(features) {
+    const homes = [], all = [];
+    for (const f of features) {
+      const g = f.geometry; if (!g) continue;
+      const ring = g.type === 'Polygon' ? g.coordinates[0] : g.type === 'MultiPolygon' ? g.coordinates[0][0] : null;
+      if (!ring || ring.length < 4) continue;
+      let sx = 0, sy = 0; const n = ring.length - 1;
+      for (let i = 0; i < n; i++) { sx += ring[i][0]; sy += ring[i][1]; }
+      const lon = sx / n, lat = sy / n, kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 110540;
+      let a = 0; for (let i = 0; i < n; i++) { const [x0, y0] = ring[i], [x1, y1] = ring[i + 1]; a += (x0 - lon) * kx * (y1 - lat) * ky - (x1 - lon) * kx * (y0 - lat) * ky; }
+      const area = Math.abs(a) / 2, p = f.properties || {}, sub = p.subtype || null, cls = p.class || p.building || null;
+      all.push({ lat, lon });
+      let res = sub === 'residential' || RES_CLS.has(cls);
+      if (!sub && (!cls || cls === 'yes')) res = area >= 50 && area <= 1500;
+      if (NON_CLS.has(cls)) res = false;
+      if (sub && sub !== 'residential' && !RES_CLS.has(cls)) res = false;
+      if (!res) continue;
+      const floors = +p.num_floors || +p.levels || 0;
+      const hh = (cls === 'apartments' || cls === 'dormitory' || (area > 600 && floors >= 2)) ? Math.min(60, Math.max(2, Math.round(area * (floors || 2) / 110))) : 1;
+      homes.push({ lat, lon, area, hh });
+    }
+    return { homes, all };
+  }
+  function extentOf(features) {
+    let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+    const visit = c => { if (typeof c[0] === 'number') { if (c[0] < w) w = c[0]; if (c[0] > e) e = c[0]; if (c[1] < s) s = c[1]; if (c[1] > n) n = c[1]; } else for (const x of c) visit(x); };
+    for (const f of features) if (f.geometry && f.geometry.coordinates) visit(f.geometry.coordinates);
+    return { w, s, e, n };
+  }
+  // Study-area box: data extent pulled in up to 1 km, capped at maxKm around a center
+  function studyBox(ext, center, maxKm) {
+    const lat0 = (ext.s + ext.n) / 2, kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540, pad = Math.min(1000, 0.1 * Math.min((ext.e - ext.w) * kx, (ext.n - ext.s) * ky));
+    let b = { w: ext.w + pad / kx, e: ext.e - pad / kx, s: ext.s + pad / ky, n: ext.n - pad / ky }, trimmed = false;
+    const halfX = maxKm * 500 / kx, halfY = maxKm * 500 / ky, c = center || { lat: lat0, lon: (ext.w + ext.e) / 2 };
+    if (b.e - b.w > 2 * halfX) { b.w = Math.max(b.w, c.lon - halfX); b.e = Math.min(b.e, b.w + 2 * halfX); trimmed = true; }
+    if (b.n - b.s > 2 * halfY) { b.s = Math.max(b.s, c.lat - halfY); b.n = Math.min(b.n, b.s + 2 * halfY); trimmed = true; }
+    return { bbox: b, trimmed };
+  }
+
+  return { finestLod, rasterize, parseFeatures, kindOf, fromOverture, buildingsFromOverture, extentOf, studyBox, parseOsm, makeGrid, overpassQuery, terrariumTiles, makeElevSampler, build, LU };
+})();
+if (typeof module !== 'undefined') module.exports = RealWorld;
+
+</script>
+<script>
+const Study = (function () {
+  const SCEN = [
+    ['base', 'Baseline: afternoon, zones within 1.5 km, 10 min to issue', {}],
+    ['night', 'Night (2 a.m.)', { night: true }],
+    ['nightFast', 'Night, 5 min to issue, 2.5 km trigger', { night: true, lagMin: 5, trigKm: 2.5 }],
+    ['det2', 'Fire reported at 2 min instead of 8', { detectMin: 2 }],
+    ['det20', 'Fire reported at 20 min', { detectMin: 20 }],
+    ['lag0', 'Orders issued instantly', { lagMin: 0 }],
+    ['lag5', '5 min to issue each order', { lagMin: 5 }],
+    ['lag15', '15 min to issue each order', { lagMin: 15 }],
+    ['lag20', '20 min to issue each order', { lagMin: 20 }],
+    ['lag30', '30 min to issue each order', { lagMin: 30 }],
+    ['trig075', 'Tighter trigger, 0.75 km', { trigKm: 0.75 }],
+    ['trig25', 'Wider trigger, 2.5 km', { trigKm: 2.5 }],
+    ['all', 'Everyone ordered at once', { alertAll: true }],
+    ['allcf', 'Everyone at once plus contraflow', { alertAll: true, contraflow: true }],
+    ['cf', 'Contraflow, zone orders', { contraflow: true }],
+    ['adaptive', 'Households react to cues', { mode: 'adaptive' }],
+  ];
+  const TABLE_ROWS = ['base', 'night', 'nightFast', 'det2', 'det20', 'lag0', 'lag30', 'trig075', 'trig25', 'all', 'allcf', 'adaptive'];
+  const BASE = { windFrom: 0, windKmh: 50, detectMin: 8, trigKm: 1.5, lagMin: 10, night: false, alertAll: false, mode: 'rules', contraflow: false };
+
+  function fires(Sim, world, K, seed) {
+    const rng = Sim.mulberry32(seed), out = [];
+    for (let i = 0; i < K; i++) out.push({ ign: Sim.randomIgnition(world, rng), seed: (rng() * 1e6) | 0 });
+    return out;
+  }
+
+  function runScenario(Sim, world, F, params) {
+    const K = F.length, nh = world.homes.length, homeFail = new Float32Array(nh);
+    const a = { failed: 0, atrisk: 0, trapped: 0, threatened: 0, t95: 0, peak: 0, shadow: 0, departed: 0, firstOrderMin: 0 };
+    const nn = { t95: 0, firstOrderMin: 0 };
+    for (const f of F) {
+      const R = Sim.newRun(world, Object.assign({}, BASE, params, f));
+      const s = Sim.runToEnd(R);
+      for (const k in a) {
+        if (k in nn) { if (s[k] != null) { a[k] += s[k]; nn[k]++; } }
+        else a[k] += s[k] / K;
+      }
+      for (let h = 0; h < nh; h++) if (R.st[h] === Sim.ST.ATRISK || R.st[h] === Sim.ST.TRAPPED) homeFail[h] += 1 / K;
+    }
+    for (const k in nn) a[k] = nn[k] ? a[k] / nn[k] : null;
+    return { m: a, homeFail };
+  }
+
+  function geo(Sim, world, homeFail) {
+    let foot = 0, town = 0, spur = 0, total = 0, nf = 0, nt = 0, ns = 0, footSum = 0, ge10 = 0, any = 0;
+    world.homes.forEach((h, i) => {
+      const p = homeFail[i]; total += p;
+      const Z = world.zones || Sim.ZONES;
+      if (Z[h.zone].foot) { foot += p; nf++; } else { town += p; nt++; }
+      if (h.spur) { spur += p; ns++; } else if (Z[h.zone].foot) { footSum += p; }
+      if (p >= 0.1) ge10++; if (p > 0) any++;
+    });
+    return { footShare: total ? foot / total : 0, footHomeShare: nf / world.homes.length, footRatio: (foot / nf) / Math.max(1e-6, town / nt),
+      spurRatio: (spur / Math.max(1, ns)) / Math.max(1e-6, footSum / Math.max(1, nf - ns)), ge10, any, homes: world.homes.length };
+  }
+
+  async function run(Sim, world, opts) {
+    const K = opts.K || 24, F = fires(Sim, world, K, opts.seed || 2026), res = { K, seed: opts.seed || 2026, scen: {} };
+    for (let i = 0; i < SCEN.length; i++) {
+      const [key, label, p] = SCEN[i];
+      const r = runScenario(Sim, world, F, p);
+      res.scen[key] = Object.assign({ label }, r.m);
+      if (key === 'base') res.geo = geo(Sim, world, r.homeFail);
+      if (opts.progress) await opts.progress(i + 1, SCEN.length);
+    }
+    return res;
+  }
+
+  return { SCEN, TABLE_ROWS, run };
+})();
+if (typeof module !== 'undefined') module.exports = Study;
+
+</script>
+<script>
+(function(){
+let BBOX = null;
+const TERRARIUM = [(z,x,y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`, (z,x,y) => `https://elevation-tiles-prod.s3.amazonaws.com/terrarium/${z}/${x}/${y}.png`];
+const S = Sim, RW = RealWorld, $ = id => document.getElementById(id);
+const P = { ign:{x:0,y:0}, windFrom:0, windKmh:50, night:false, detectMin:8, trigKm:1.5, lagMin:10, alertAll:false, mode:'rules', contraflow:false, seed:1 };
+let world=null, grid=null, R=null, playing=false, started=false, logged=false, runNo=0, risk=null, riskRuns=0, frame=0, busy=false;
+const speeds=[{n:'Slow',every:3,per:1},{n:'Normal',every:1,per:1},{n:'Fast',every:1,per:4},{n:'Very fast',every:1,per:12}];
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ---------- map ----------
+const map = L.map('map', { zoomSnap: 0.25 }).setView([36.5,-119.5], 6);
+const bases = {
+  'Light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution:'&copy; OpenStreetMap contributors &copy; CARTO', subdomains:'abcd', maxZoom:19 }),
+  'Terrain': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution:'&copy; OpenStreetMap contributors, SRTM | &copy; OpenTopoMap (CC-BY-SA)', subdomains:'abc', maxZoom:17 }),
+  'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution:'Tiles &copy; Esri, Maxar, Earthstar Geographics', maxZoom:19 }),
+  'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'&copy; OpenStreetMap contributors', maxZoom:19 }),
+};
+bases.Light.addTo(map);
+L.control.layers(bases, null, { position:'topright' }).addTo(map);
+L.control.scale({ imperial:false }).addTo(map);
+
+const ov = document.createElement('canvas'); ov.className='ov'; map.getContainer().appendChild(ov);
+const ctx = ov.getContext('2d');
+function sizeOv(){ const s=map.getSize(), d=window.devicePixelRatio||1; ov.width=s.x*d; ov.height=s.y*d; ov.style.width=s.x+'px'; ov.style.height=s.y+'px'; }
+sizeOv(); map.on('resize', sizeOv);
+map.on('zoomstart', ()=>ov.style.opacity=0); map.on('zoomend', ()=>ov.style.opacity=1);
+
+// ---------- intake ----------
+const store = { segments:[], buildings:[], landcover:[], landuse:[], osm:null, files:[] };
+function step(id, cls){ $(id).className=cls; }
+function renderFiles(){
+  $('filelist').innerHTML = store.files.map(f=>`<li class="${f.ok?'':'bad'}"><span>${f.name}</span><span>${f.msg}</span></li>`).join('');
+  $('build').disabled = !(store.segments.length || store.osm);
+}
+async function addFiles(list){
+  for (const f of list){
+    const rec = { name:f.name, ok:false, msg:'Reading…' }; store.files.push(rec); renderFiles();
+    try {
+      const parsed = RW.parseFeatures(await f.text());
+      if (parsed.osm){ store.osm = parsed.osm; rec.ok=true; rec.msg=`OpenStreetMap roads, ${parsed.osm.elements.filter(e=>e.type==='way').length.toLocaleString()} ways`; }
+      else {
+        const k = RW.kindOf(parsed.features);
+        if (k==='segments'){ store.segments.push(...parsed.features); rec.ok=true; rec.msg=`${parsed.features.length.toLocaleString()} road segments`; }
+        else if (k==='buildings'){ store.buildings.push(...parsed.features); rec.ok=true; rec.msg=`${parsed.features.length.toLocaleString()} building footprints`; }
+        else if (k==='landcover'){ store.landcover.push(...parsed.features); rec.ok=true; rec.msg=`${parsed.features.length.toLocaleString()} land cover areas`; }
+        else if (k==='landuse'){ store.landuse.push(...parsed.features); rec.ok=true; rec.msg=`${parsed.features.length.toLocaleString()} land use areas`; }
+        else if (k==='points'){ rec.ok=true; rec.msg='Points, not needed (connectors are optional)'; }
+        else rec.msg='No roads or buildings found in this file';
+      }
+    } catch(e){ rec.msg = /JSON|token/i.test(e.message) ? 'Not a GeoJSON, GeoJSONSeq or OSM file' : "Couldn't read it: " + e.message; }
+    renderFiles();
+  }
+}
+$('files').onchange = e => { addFiles(Array.from(e.target.files)); e.target.value=''; };
+const drop=$('drop');
+['dragenter','dragover'].forEach(t=>drop.addEventListener(t, e=>{ e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(t=>drop.addEventListener(t, e=>{ e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e=>addFiles(Array.from(e.dataTransfer.files)));
+drop.addEventListener('keydown', e=>{ if (e.key==='Enter'||e.key===' '){ e.preventDefault(); $('files').click(); } });
+$('back').onclick=()=>{ $('progress').hidden=true; $('intake').hidden=false; $('back').hidden=true; };
+
+async function fetchElevation(){
+  const tiles = RW.terrariumTiles(BBOX, 13);
+  if (tiles.length > 120) throw new Error('study area too large for elevation tiles');
+  const cv = document.createElement('canvas'); cv.width=256; cv.height=256; const g=cv.getContext('2d', { willReadFrequently:true });
+  const out = [];
+  for (let i=0;i<tiles.length;i++){
+    const t=tiles[i]; let r = null;
+    $('loadNote').textContent=`Elevation tile ${i+1} of ${tiles.length}`;
+    for (const mk of TERRARIUM){ try { r = await fetch(mk(t.z,t.x,t.y)); if (r.ok) break; } catch(e){ r = null; } }
+    if (!r || !r.ok) throw new Error('elevation tiles unreachable');
+    const bmp = await createImageBitmap(await r.blob());
+    g.clearRect(0,0,256,256); g.drawImage(bmp,0,0); out.push(Object.assign({ data: g.getImageData(0,0,256,256).data }, t));
+  }
+  return RW.makeElevSampler(out);
+}
+function fallbackElevation(){ return () => 150; }
+
+$('build').onclick = async () => {
+  $('intake').hidden=true; $('progress').hidden=false; $('back').hidden=true;
+  const name = $('areaName').value.trim() || 'Study area';
+  $('title').textContent = `${name} fire egress simulator`; document.title = `${name} fire egress simulator`;
+  step('st-files','on'); $('loadNote').textContent='';
+  await new Promise(r=>setTimeout(r,30));
+  let osm, B=null, ext;
+  try {
+    osm = store.segments.length ? RW.fromOverture(store.segments) : store.osm;
+    if (store.buildings.length) B = RW.buildingsFromOverture(store.buildings);
+    if (store.segments.length) ext = RW.extentOf(store.segments);
+    else { let w=Infinity,s=Infinity,e=-Infinity,n=-Infinity; for (const el of osm.elements) if (el.type==='node'){ if(el.lon<w)w=el.lon; if(el.lon>e)e=el.lon; if(el.lat<s)s=el.lat; if(el.lat>n)n=el.lat; } ext={w,s,e,n}; }
+    if (!isFinite(ext.w)) throw new Error('no road geometry found');
+    let center=null;
+    if (B && B.homes.length){ let a=0,b=0; for (const h of B.homes){ a+=h.lat; b+=h.lon; } center={ lat:a/B.homes.length, lon:b/B.homes.length }; }
+    const sb = RW.studyBox(ext, center, 25); BBOX = sb.bbox;
+    if (sb.trimmed){ $('warn').hidden=false; $('warn').textContent='Your data covers more than 25 km, so the study area was trimmed to 25 km around the center of the homes. Roads beyond it still carry traffic to the exits.'; }
+    step('st-files','done');
+  } catch(e){ step('st-files','err'); $('loadNote').textContent="Couldn't use these files: "+e.message+'.'; $('back').hidden=false; return; }
+  map.fitBounds([[BBOX.s,BBOX.w],[BBOX.n,BBOX.e]], { padding:[12,12] });
+  L.rectangle([[BBOX.s,BBOX.w],[BBOX.n,BBOX.e]], { fill:false, color:'#37474F', weight:1, dashArray:'5 5', interactive:false }).addTo(map);
+  let elevFn;
+  try { step('st-dem','on'); elevFn = await fetchElevation(); step('st-dem','done'); }
+  catch(e){ step('st-dem','err'); elevFn = fallbackElevation(); $('warn').hidden=false; $('warn').textContent=`Terrain elevation couldn't load (${e.message}), so the model treats the area as flat and has no coastline. Fire spread and the fuel map will be much less realistic.`; }
+  step('st-build','on'); $('loadNote').textContent='Building the model…';
+  await new Promise(r=>setTimeout(r,30));
+  try {
+    grid = RW.makeGrid(BBOX);
+    world = RW.build(osm, grid, elevFn, { Sim:S, homeSpacing:75, buildings:B, maxAgents:12000, landcover:store.landcover, landuse:store.landuse });
+    if (!world.homes.length) throw new Error('no households could be placed; check that the files cover the same area');
+    if (!world.nodes.some(n=>n.exit)) throw new Error('no roads leave the area, so there are no evacuation exits');
+  } catch(e){ step('st-build','err'); $('loadNote').textContent="Couldn't build the model: "+e.message+'.'; $('back').hidden=false; return; }
+  S.setDims(world.W, world.H); S.setZones(world.zones);
+  step('st-build','done');
+  buildStatic();
+  P.ign = defaultIgnition();
+  $('loading').style.display='none';
+  ['play','finish','reset','randIgn','ens','runStudy'].forEach(id=>$(id).disabled=false);
+  const st=world.stats, w=world.agentWeight;
+  $('status').textContent = world.homeSource==='buildings'
+    ? `Built a network of ${st.nodes.toLocaleString()} intersections from ${st.ways.toLocaleString()} road segments, with ${st.households.toLocaleString()} homes from building footprints in ${st.zones} zones and ${st.exits} exits.` + (w>1.05?` Each simulated household stands for about ${r1(w)} homes.`:'')
+    : `Built a network of ${st.nodes.toLocaleString()} intersections from ${st.ways.toLocaleString()} road segments, with ${st.homes.toLocaleString()} households placed along residential streets in ${st.zones} zones and ${st.exits} exits.`;
+  const cov = world.stats.landcoverShare;
+  $('status').textContent += cov > 0.05 ? ` Fuels come from Overture land cover (${pct(cov)} of the area)${world.stats.landuseCells?', refined with land use':''}.` : ' Fuels are inferred from terrain and building density; add Overture land cover for a better fuel map.';
+  if (store.landcover.length && cov < 0.05){ $('warn').hidden=false; $('warn').textContent="The land cover file doesn't overlap the study area, so fuels were inferred from terrain and building density instead."; }
+  resetRun();
+};
+function defaultIgnition(){
+  let sx=0, sy=0; for (const h of world.homes){ sx+=h.fx; sy+=h.fy; } sx/=world.homes.length; sy/=world.homes.length;
+  let best=null, bd=Infinity;
+  for (const c of world.ignCandidates){ const x=c%world.W, y=(c/world.W)|0, d=(x-sx)**2+(y-sy)**2; if (d<bd){ bd=d; best={x,y}; } }
+  return best || S.randomIgnition(world, Math.random);
+}
+
+function nearestFuel(x,y){
+  let best=null, bd=1e9;
+  for (let dy=-30; dy<=30; dy++) for (let dx=-30; dx<=30; dx++){
+    const xx=x+dx, yy=y+dy; if (xx<0||yy<0||xx>=world.W||yy>=world.H) continue;
+    const c=yy*world.W+xx; if (world.lu[c]!==RW.LU.CHAP || world.fuel[c]<0.8) continue;
+    const d=dx*dx+dy*dy; if (d<bd){ bd=d; best={x:xx,y:yy}; }
+  }
+  return best || S.randomIgnition(world, Math.random);
+}
+
+// ---------- static layers ----------
+let fuelCv, fireCv, fireCtx, fireImg, fieldCv, fieldCtx, fieldImg, exitLabels=[];
+function buildStatic(){
+  const W=world.W, H=world.H;
+  fuelCv=document.createElement('canvas'); fuelCv.width=W; fuelCv.height=H;
+  const fc=fuelCv.getContext('2d'), fi=fc.createImageData(W,H);
+  const pal={0:[0,0,0,0],1:[230,214,170,130],2:[140,140,150,115],3:[214,150,80,135],4:[85,115,45,145],5:[222,200,110,140],6:[120,175,95,140],7:[175,165,155,130]};
+  for (let c=0;c<W*H;c++){ const p=pal[world.lu[c]]; fi.data.set(p, c*4); }
+  fc.putImageData(fi,0,0);
+  fireCv=document.createElement('canvas'); fireCv.width=W; fireCv.height=H; fireCtx=fireCv.getContext('2d'); fireImg=fireCtx.createImageData(W,H);
+  fieldCv=document.createElement('canvas'); fieldCv.width=world.BW; fieldCv.height=world.BH; fieldCtx=fieldCv.getContext('2d'); fieldImg=fieldCtx.createImageData(world.BW,world.BH);
+  exitLabels = world.nodes.filter(n=>n.exit).map(n=>{
+    const names = new Set(n.inn.concat(n.out).map(id=>world.edges[id].name)); return { n, name: Array.from(names)[0] || 'Exit' };
+  });
+}
+
+// ---------- run control ----------
+function resetRun(){
+  if (!world) return;
+  R = S.newRun(world, P); playing=false; started=false; logged=false;
+  $('play').textContent='Start';
+  renderAlerts(); updateTallies(); drawChart(); renderResults(); windBadge();
+}
+function describe(){
+  const wind={0:'Sundowner',45:'Santa Ana',225:'Onshore'}[P.windFrom];
+  return { cond:`${wind} ${P.windKmh} km/h, ${P.night?'2 a.m.':'afternoon'}`,
+    alert: P.alertAll? `Everyone at once, reported at ${P.detectMin} min, ${P.lagMin} min to issue` : `Zones within ${P.trigKm} km, reported at ${P.detectMin} min, ${P.lagMin} min to issue`,
+    beh: (P.mode==='rules'?'Wait for the order':'Read the neighborhood')+(P.contraflow?', contraflow':'') };
+}
+const pct = x => Math.round(x*100)+'%';
+function fmtMin(m){ if (m==null) return '–'; m=Math.round(m); return `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`; }
+const fmtT = ticks => fmtMin(ticks*S.DT/60);
+function logRun(){
+  if (logged) return; logged=true; runNo++;
+  const s=S.summary(R), d=describe(), tr=document.createElement('tr');
+  tr.innerHTML=`<td>${runNo}</td><td>${d.cond}</td><td>${d.alert}</td><td>${d.beh}</td><td class="n" style="color:var(--risk)">${s.failed}</td><td class="n">${s.threatened?pct(s.pctThreatened):'–'}</td><td class="n">${fmtMin(s.firstOrderMin)}</td><td class="n">${fmtMin(s.t95)}</td><td class="n">${s.peak}</td><td class="n">${s.shadow}</td>`;
+  $('cmpBody').prepend(tr); $('cmpEmpty').style.display='none';
+}
+function renderAlerts(){
+  const ul=$('alerts'); ul.innerHTML='';
+  if (!R || !R.alertLog.length){ ul.innerHTML='<li><span style="color:var(--muted)">No evacuation orders yet</span></li>'; return; }
+  const log=R.alertLog.slice(-12);
+  ul.innerHTML=log.map(a=>`<li><span>Zone ${a.zone} ordered to leave</span><span>T+${fmtT(a.t)}</span></li>`).join('') + (R.alertLog.length>12?`<li><span style="color:var(--muted)">${R.alertLog.length-12} earlier orders not shown</span></li>`:'');
+}
+function updateTallies(){
+  const c=S.counts(R);
+  $('k-safe').textContent=c.safe.toLocaleString(); $('k-road').textContent=c.onroad.toLocaleString(); $('k-prep').textContent=c.preparing.toLocaleString();
+  $('k-risk').textContent=c.atrisk; $('k-trap').textContent=c.trapped; $('clock').textContent='T+'+fmtT(R.t);
+}
+function renderResults(){
+  if (!R) return;
+  const s=S.summary(R);
+  if (!started){ ['m-fail','m-order','m-t95','m-peak','m-shadow'].forEach(id=>$(id).textContent='–'); $('zoneBody').innerHTML=''; $('bnBody').innerHTML=''; $('resSub').textContent='Start a fire to see results. They update live and settle when the run finishes.'; renderParcel(); return; }
+  const d=describe();
+  $('resSub').textContent=(R.done?'Final results. ':'Live, still running. ')+`${d.cond}. ${d.alert}. ${d.beh}.`+(world.agentWeight>1.05?` Counts are simulated households; each stands for about ${r1(world.agentWeight)} homes.`:'');
+  $('m-fail').textContent=s.failed;
+  $('m-fail-d').textContent= s.threatened? `${pct(s.pctThreatened)} of the ${s.threatened.toLocaleString()} homes the fire reached. ${s.atrisk} never left, ${s.trapped} caught on a road.` : 'Fire has not reached any homes yet.';
+  $('m-order').textContent= s.firstOrderMin==null? 'None yet' : 'T+'+fmtMin(s.firstOrderMin);
+  $('m-order-d').textContent= s.firstOrderMin==null? 'No zone has been ordered to leave' : `Fire reported at ${P.detectMin} min, ${P.lagMin} min to issue`;
+  $('m-t95').textContent= s.t95==null? '–' : 'T+'+fmtMin(s.t95);
+  $('m-peak').textContent=s.peak.toLocaleString();
+  $('m-peak-d').textContent=`Household vehicles at the busiest moment, out of ${s.departed.toLocaleString()} that left`;
+  $('m-shadow').textContent=s.shadow.toLocaleString();
+  $('zoneBody').innerHTML=s.zones.filter(z=>z.threatened||z.failed||z.orderMin!=null).slice(0,10).map(z=>`<tr><td>${z.id} ${z.foot?'foothills':'town'}</td><td class="n">${z.homes}</td><td class="n">${z.threatened}</td><td class="n" style="color:${z.failed?'var(--risk)':'inherit'}">${z.failed}</td><td class="n">${z.orderMin==null?'Not ordered':'T+'+fmtMin(z.orderMin)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">No zones affected yet</td></tr>';
+  const mx=s.bottlenecks.length? s.bottlenecks[0].vehMin:1;
+  $('bnBody').innerHTML= s.bottlenecks.length? s.bottlenecks.map(b=>`<tr><td>${b.name}</td><td class="n">${Math.round(b.vehMin).toLocaleString()}</td><td><div class="bar" style="width:${Math.max(4,100*b.vehMin/mx)}%"></div></td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--muted)">No queues yet</td></tr>';
+  renderParcel();
+}
+function renderParcel(){
+  if (!risk){ $('m-parcel').textContent='–'; return; }
+  let hi=0,f=0,nf=0,t=0,nt=0;
+  world.homes.forEach((h,i)=>{ const p=risk[i]/riskRuns; if (p>=0.1) hi++; if (world.zones[h.zone].foot){ f+=p; nf++; } else { t+=p; nt++; } });
+  $('m-parcel').textContent=hi.toLocaleString();
+  const ratio = t>0 && nf ? `, and foothill homes are ${Math.round((f/nf)/(t/nt))} times as likely not to get out as town homes` : '';
+  $('m-parcel-d').textContent=`Homes that didn't get out in 10% or more of ${riskRuns} fires${ratio}.`;
+}
+
+// ---------- drawing ----------
+const HC={0:'#5B6970',1:'#F08C00',2:'#1971C2',3:'#1971C2',4:'#0B7A75',5:'#C92A2A',6:'#7B2D8E'};
+function riskColor(p){ if (p<=0) return '#6FB7A8'; if (p<0.1) return '#F2C94C'; if (p<0.3) return '#F08C00'; return '#C92A2A'; }
+function xf(){
+  const o=map.latLngToContainerPoint(grid.toLatLng(0,0)), a=map.latLngToContainerPoint(grid.toLatLng(world.W,0)), b=map.latLngToContainerPoint(grid.toLatLng(0,world.H));
+  return { ox:o.x, oy:o.y, ax:(a.x-o.x)/world.W, ay:(a.y-o.y)/world.W, bx:(b.x-o.x)/world.H, by:(b.y-o.y)/world.H };
+}
+function edgePoint(e, s){
+  let i=1; while (i<e.cum.length-1 && e.cum[i]<s) i++;
+  const seg=(e.cum[i]-e.cum[i-1])||1, f=Math.max(0,Math.min(1,(s-e.cum[i-1])/seg)), a=e.pts[i-1], b=e.pts[i];
+  return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, b[0]-a[0], b[1]-a[1]];
+}
+function draw(){
+  const d=window.devicePixelRatio||1;
+  ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,ov.width,ov.height);
+  if (!world || !R) return;
+  const T=xf(), px=(gx,gy)=>[T.ox+T.ax*gx+T.bx*gy, T.oy+T.ay*gx+T.by*gy], cellPx=Math.hypot(T.ax,T.ay), layer=$('layer').value;
+  // raster layers in grid space
+  ctx.setTransform(d*T.ax, d*T.ay, d*T.bx, d*T.by, d*T.ox, d*T.oy);
+  if (layer==='fuel'){ ctx.imageSmoothingEnabled=false; ctx.drawImage(fuelCv,0,0); }
+  const fd=fireImg.data, fire=R.fire;
+  for (let c=0;c<fire.length;c++){
+    const i=c*4, s=fire[c];
+    if (!s){ fd[i+3]=0; continue; }
+    if (s===2){ fd[i]=45; fd[i+1]=35; fd[i+2]=30; fd[i+3]=175; }
+    else if ((R.burnLeft[c]+frame)%6<3){ fd[i]=255; fd[i+1]=90; fd[i+2]=31; fd[i+3]=235; } else { fd[i]=255; fd[i+1]=176; fd[i+2]=32; fd[i+3]=235; }
+  }
+  fireCtx.putImageData(fireImg,0,0); ctx.imageSmoothingEnabled=false; ctx.drawImage(fireCv,0,0);
+  if (layer==='smoke'||layer==='info'||layer==='cong'){
+    const fdd=fieldImg.data, n=world.BW*world.BH; let cong=null;
+    if (layer==='cong'){ cong=new Float32Array(n); for (const eid of R.active){ const e=world.edges[eid], q=R.eq[eid].length; if(q){ const b=((e.my|0)>>2)*world.BW+((e.mx|0)>>2); if (b>=0&&b<n) cong[b]+=q; } } }
+    for (let b=0;b<n;b++){
+      let a=0, col;
+      if (layer==='smoke'){ a=Math.min(.62,R.smoke[b]/14); col=[70,62,88]; } else if (layer==='info'){ a=Math.min(.6,R.info[b]/2.5); col=[11,122,117]; } else { a=Math.min(.65,cong[b]/12); col=[201,42,42]; }
+      fdd[b*4]=col[0]; fdd[b*4+1]=col[1]; fdd[b*4+2]=col[2]; fdd[b*4+3]=a>0.02?a*255:0;
+    }
+    fieldCtx.putImageData(fieldImg,0,0); ctx.imageSmoothingEnabled=true; ctx.drawImage(fieldCv,0,0,world.W,world.H);
+  }
+  ctx.setTransform(d,0,0,d,0,0);
+  // congested and closed roads
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  const drawEdge=(e)=>{ ctx.beginPath(); e.pts.forEach((p,i)=>{ const [x,y]=px(p[0],p[1]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); };
+  for (const eid of R.active){
+    const e=world.edges[eid], ratio=R.eq[eid].length/R.estore[eid]; if (ratio<0.05) continue;
+    ctx.lineWidth=Math.max(2,Math.min(6,cellPx*0.9)); ctx.strokeStyle= ratio>0.66?'#C92A2A': ratio>0.33?'#F08C00':'#E8B84A'; drawEdge(e);
+  }
+  ctx.setLineDash([4,3]); ctx.strokeStyle='#B00020'; ctx.lineWidth=Math.max(2,Math.min(5,cellPx*0.8));
+  for (let i=0;i<world.edges.length;i++) if (R.eburn[i]>0) drawEdge(world.edges[i]);
+  ctx.setLineDash([]);
+  // homes
+  const hs=Math.max(1.6,Math.min(4.5,cellPx*0.6));
+  for (const h of world.homes){
+    ctx.fillStyle = layer==='risk' ? (risk? riskColor(risk[h.id]/riskRuns):'#8A979E') : HC[R.st[h.id]];
+    const [x,y]=px(h.fx,h.fy); ctx.fillRect(x-hs/2,y-hs/2,hs,hs);
+  }
+  // vehicles
+  const vr=Math.max(1.4,Math.min(3,cellPx*0.35));
+  ctx.fillStyle='#FFFFFF'; ctx.strokeStyle='#14222D'; ctx.lineWidth=0.7;
+  for (const eid of R.active){
+    const e=world.edges[eid], q=R.eq[eid]; let lim=e.len;
+    for (let i=0;i<q.length;i++){
+      const a=q[i], start=R.exitT[a]-e.tt; let s=Math.min(1,Math.max(0,(R.t-start)/e.tt))*e.len; s=Math.min(s,lim); lim=s-12.75/Math.max(1,e.lanes);
+      const [gx,gy,dx,dy]=edgePoint(e,Math.max(0,s)), l=Math.hypot(dx,dy)||1, off=0.35;
+      const [x,y]=px(gx+dy/l*off, gy-dx/l*off);
+      ctx.beginPath(); ctx.arc(x,y,vr,0,7); ctx.fill(); ctx.stroke();
+    }
+  }
+  // zone labels
+  if (cellPx>=1.4){
+    ctx.font='600 12px "Barlow Condensed","Arial Narrow",sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    world.zones.forEach((z,i)=>{
+      if (z.n<15) return;
+      const alerted=R.zoneAlert[i]>=0 && R.t>=R.zoneAlert[i]; const [x,y]=px(z.cx,z.cy);
+      ctx.fillStyle=alerted?'rgba(103,65,217,.95)':'rgba(255,255,255,.8)'; ctx.beginPath(); ctx.roundRect(x-13,y-8,26,16,4); ctx.fill();
+      ctx.fillStyle=alerted?'#fff':'#2B3A42'; ctx.fillText(z.id,x,y+1);
+    });
+  }
+  // exits
+  ctx.font='500 11.5px "IBM Plex Sans",system-ui,sans-serif'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  for (const {n,name} of exitLabels){
+    const [x,y]=px(n.x,n.y);
+    ctx.fillStyle='#0B7A75'; ctx.beginPath(); ctx.arc(x,y,5,0,7); ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+    const label='Exit: '+name, w=ctx.measureText(label).width+10;
+    const lx=Math.min(Math.max(x+8,4), ov.width/d-w-4), ly=Math.min(Math.max(y-9,4), ov.height/d-22);
+    ctx.fillStyle='rgba(11,122,117,.92)'; ctx.beginPath(); ctx.roundRect(lx,ly,w,18,4); ctx.fill(); ctx.fillStyle='#fff'; ctx.fillText(label,lx+5,ly+9.5);
+  }
+  // ignition
+  const [ix,iy]=px(P.ign.x+0.5,P.ign.y+0.5);
+  ctx.strokeStyle='#fff'; ctx.lineWidth=3.5; ctx.beginPath(); ctx.arc(ix,iy,9,0,7); ctx.stroke();
+  ctx.strokeStyle='#D9480F'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(ix,iy,9,0,7); ctx.stroke();
+}
+function windBadge(){
+  const th=P.windFrom*Math.PI/180, wx=-Math.sin(th), wy=Math.cos(th), c=16, L=11;
+  const x1=c-wx*L, y1=c-wy*L, x2=c+wx*L, y2=c+wy*L, a=Math.atan2(wy,wx);
+  const h1=[x2-Math.cos(a-0.5)*7, y2-Math.sin(a-0.5)*7], h2=[x2-Math.cos(a+0.5)*7, y2-Math.sin(a+0.5)*7];
+  $('windbadge').innerHTML=`<svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M${x1} ${y1}L${x2} ${y2}M${h1[0]} ${h1[1]}L${x2} ${y2}L${h2[0]} ${h2[1]}" stroke="#1B2A33" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg><span>Wind ${P.windKmh} km/h</span>`;
+}
+function legend(){
+  const layer=$('layer').value; let items;
+  if (layer==='risk') items=[['#6FB7A8','Got out in every run'],['#F2C94C','Under 10% of runs'],['#F08C00','10–30%'],['#C92A2A','Over 30%']];
+  else if (layer==='fuel') items=[['rgba(85,115,45,.8)','Shrub and forest'],['rgba(222,200,110,.8)','Grass, and irrigated parks'],['rgba(120,175,95,.8)','Agriculture'],['rgba(214,150,80,.8)','Neighborhoods in vegetation'],['rgba(140,140,150,.75)','Town'],['rgba(175,165,155,.75)','Bare ground'],['rgba(230,214,170,.8)','Beach']];
+  else items=[['#5B6970','Not yet warned'],['#F08C00','Getting ready'],['#1971C2','On the road'],['#0B7A75','Reached safety'],['#C92A2A','Fire reached home first'],['#7B2D8E','Caught on road'],['#FF5A1F','Active fire'],['#B00020','Road closed by fire']];
+  if (layer==='smoke') items.push(['rgba(70,62,88,.6)','Smoke density']);
+  if (layer==='info') items.push(['rgba(11,122,117,.55)','Neighbors seen leaving']);
+  if (layer==='cong') items.push(['rgba(201,42,42,.5)','Vehicles queued']);
+  $('legend').innerHTML=items.map(([c,t])=>`<span><i class="sw" style="background:${c}"></i>${t}</span>`).join('');
+}
+function drawChart(){
+  const cv=$('chart'), dpr=window.devicePixelRatio||1, w=cv.clientWidth, h=150;
+  cv.width=w*dpr; cv.height=h*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,w,h);
+  const ser=R?R.series:[]; const tot=world?world.homes.length:1;
+  const pad={l:48,r:10,t:8,b:22}, iw=w-pad.l-pad.r, ih=h-pad.t-pad.b;
+  const tmax=Math.max(120, ser.length? ser[ser.length-1].t*S.DT/60:0);
+  g.strokeStyle=cssVar('--line'); g.fillStyle=cssVar('--muted'); g.font='12px "IBM Plex Sans",system-ui'; g.lineWidth=1;
+  for (let i=0;i<=4;i++){ const y=pad.t+ih*i/4; g.beginPath(); g.moveTo(pad.l,y); g.lineTo(w-pad.r,y); g.stroke(); g.textAlign='right'; g.fillText(Math.round(tot*(1-i/4)).toLocaleString(),pad.l-6,y+4); }
+  g.textAlign='center'; for (let m=0;m<=tmax;m+=30) g.fillText(fmtMin(m),pad.l+iw*m/tmax,h-6);
+  for (const [k,v] of [['safe','--safe'],['onroad','--road'],['preparing','--ember'],['atrisk','--risk'],['trapped','--caught']]){
+    g.strokeStyle=cssVar(v); g.lineWidth=2; g.beginPath();
+    ser.forEach((s,i)=>{ const x=pad.l+iw*(s.t*S.DT/60)/tmax, y=pad.t+ih*(1-s[k]/tot); i?g.lineTo(x,y):g.moveTo(x,y); }); g.stroke();
+  }
+}
+
+// ---------- loop ----------
+function tick(){
+  frame++;
+  if (world && R && playing && !R.done && !busy){
+    const sp=speeds[+$('speed').value];
+    if (frame%sp.every===0) for (let i=0;i<sp.per && !R.done;i++) S.step(R);
+    if (frame%8===0){ updateTallies(); drawChart(); renderAlerts(); renderResults(); }
+    if (R.done) finishRun();
+  }
+  draw(); requestAnimationFrame(tick);
+}
+function finishRun(){ playing=false; $('play').textContent='Finished'; updateTallies(); drawChart(); renderAlerts(); renderResults(); logRun(); }
+
+// ---------- controls ----------
+function setPressed(on,off){ $(on).setAttribute('aria-pressed','true'); $(off).setAttribute('aria-pressed','false'); }
+const changed=()=>resetRun();
+$('play').onclick=()=>{ if (R.done) resetRun(); playing=!playing; started=true; $('play').textContent=playing?'Pause':'Resume'; };
+$('finish').onclick=()=>{ started=true; while(!R.done) S.step(R); finishRun(); };
+$('reset').onclick=resetRun;
+$('speed').oninput=e=>{ $('speedOut').textContent=speeds[+e.target.value].n; };
+$('wind').onchange=e=>{ P.windFrom=+e.target.value; changed(); };
+$('ws').oninput=e=>{ P.windKmh=+e.target.value; $('wsOut').textContent=P.windKmh+' km/h'; }; $('ws').onchange=changed;
+$('day').onclick=()=>{ P.night=false; setPressed('day','night'); changed(); };
+$('night').onclick=()=>{ P.night=true; setPressed('night','day'); changed(); };
+$('randIgn').onclick=()=>{ P.ign=S.randomIgnition(world,Math.random); P.seed=(Math.random()*1e6)|0; changed(); };
+$('det').oninput=e=>{ P.detectMin=+e.target.value; $('detOut').textContent=P.detectMin+' min'; }; $('det').onchange=changed;
+$('trig').oninput=e=>{ P.trigKm=+e.target.value; $('trigOut').textContent=P.trigKm+' km'; }; $('trig').onchange=changed;
+$('lag').oninput=e=>{ P.lagMin=+e.target.value; $('lagOut').textContent=P.lagMin+' min'; }; $('lag').onchange=changed;
+$('polTrig').onclick=()=>{ P.alertAll=false; setPressed('polTrig','polAll'); $('trig').disabled=false; changed(); };
+$('polAll').onclick=()=>{ P.alertAll=true; setPressed('polAll','polTrig'); $('trig').disabled=true; changed(); };
+const notes={ rules:'Households leave when they get the official order or see flames nearby, and take the fastest open route.',
+  adaptive:'Households also react to smoke and to neighbors leaving, and steer around congestion and fire. Watch for shadow evacuation from zones that were never ordered out.' };
+$('mRules').onclick=()=>{ P.mode='rules'; setPressed('mRules','mAdapt'); $('modeNote').textContent=notes.rules; changed(); };
+$('mAdapt').onclick=()=>{ P.mode='adaptive'; setPressed('mAdapt','mRules'); $('modeNote').textContent=notes.adaptive; changed(); };
+$('cf').onchange=e=>{ P.contraflow=e.target.checked; changed(); };
+$('layer').onchange=legend;
+$('clearCmp').onclick=()=>{ $('cmpBody').innerHTML=''; $('cmpEmpty').style.display=''; runNo=0; };
+
+const LUN=['Ocean','Beach','Town','Neighborhood in vegetation','Shrub or forest','Grass','Agriculture','Bare ground'];
+function cellAt(latlng){ const [gx,gy]=grid.toGrid(latlng.lat,latlng.lng); const x=Math.floor(gx), y=Math.floor(gy); return (x<0||y<0||x>=world.W||y>=world.H)?null:{x,y,c:y*world.W+x}; }
+map.on('click', ev=>{
+  if (!world || busy) return; const p=cellAt(ev.latlng);
+  if (!p){ $('status').textContent='That point is outside the study area (dashed box).'; return; }
+  if (world.fuel[p.c]<=0.05){ $('status').textContent='Fires need fuel. Pick a spot in the hills or neighborhoods.'; return; }
+  P.ign={x:p.x,y:p.y}; P.seed=(Math.random()*1e6)|0; resetRun();
+});
+map.on('mousemove', ev=>{
+  if (!world || !R) return; const p=cellAt(ev.latlng); if (!p) return;
+  let s=`${LUN[world.lu[p.c]]} (fuel ${Math.round(world.fuel[p.c]*100)}), ${Math.round(world.elev[p.c])} m elevation`;
+  if (R.arrival[p.c]>=0) s+=`, fire arrived T+${fmtT(R.arrival[p.c])}`;
+  const near=world.cellHomes[p.c];
+  if (near && near.length){
+    const h=world.homes[near[0]];
+    s+=`. Home on ${h.road}, zone ${world.zones[h.zone].id}: `+['not yet warned','getting ready','waiting to get on the road','on the road','reached safety','fire reached home first','caught on a burning road'][R.st[h.id]];
+    if (R.departT[h.id]>=0) s+=`, left T+${fmtT(R.departT[h.id])}`;
+    if (risk) s+=`. Didn't get out in ${risk[h.id]} of ${riskRuns} mapped fires`;
+  }
+  $('status').textContent=s+'.';
+});
+
+$('ens').onclick=()=>{
+  if (busy) return; busy=true; const btn=$('ens'); btn.disabled=true; const K=10; let i=0;
+  const acc=new Uint16Array(world.homes.length), rng=S.mulberry32(Date.now()&0xffff);
+  function one(){
+    const Rr=S.newRun(world,Object.assign({},P,{ign:S.randomIgnition(world,rng),seed:(rng()*1e6)|0})); S.runToEnd(Rr);
+    for (let h=0;h<acc.length;h++) if (Rr.st[h]===S.ST.ATRISK||Rr.st[h]===S.ST.TRAPPED) acc[h]++;
+    i++; $('ensNote').textContent=`Running fire ${i} of ${K}…`;
+    if (i<K) setTimeout(one,0);
+    else { risk=acc; riskRuns=K; btn.disabled=false; busy=false; let hi=0; for (const v of acc) if (v/K>=0.1) hi++;
+      $('ensNote').textContent=`Done. ${hi.toLocaleString()} of ${acc.length.toLocaleString()} simulated households didn't get out in at least 10% of the ${K} fires under these settings. Hover a home for its count.`;
+      $('layer').value='risk'; legend(); renderParcel(); }
+  }
+  $('ensNote').textContent=`Running fire 1 of ${K}…`; setTimeout(one,20);
+};
+
+// ---------- policy study ----------
+const r1 = x => (Math.round(x*10)/10).toString();
+function renderStudy(d){
+  const s=d.scen, g=d.geo;
+  $('studyOut').hidden=false;
+  $('studySub').textContent=`${d.K} fires from random ignitions in the wildland within about 3 km of homes, under a 50 km/h Sundowner, run through 16 scenarios with the same fires and random draws. Values are means per fire across ${g.homes.toLocaleString()} simulated households${world.agentWeight>1.05?`, each standing for about ${r1(world.agentWeight)} homes`:''}.`;
+  $('studyBody').innerHTML=Study.TABLE_ROWS.map(k=>{ const r=s[k]; return `<tr class="${k==='base'?'hl':''}"><td>${r.label.replace('zones within','zones within')}</td><td class="n" style="color:var(--risk)">${r1(r.failed)}</td><td class="n">${r1(r.trapped)}</td><td class="n">${fmtMin(r.firstOrderMin)}</td><td class="n">${fmtMin(r.t95)}</td><td class="n">${Math.round(r.peak).toLocaleString()}</td></tr>`; }).join('');
+  const slope=(s.lag30.failed-s.lag0.failed)/30, stayShare=s.base.failed? s.base.atrisk/s.base.failed : 0;
+  const nightX=s.base.failed? s.night.failed/s.base.failed : 0;
+  const F=[
+    [slope>0.05?'Minutes of warning cost lives':'Warning time barely moves the toll on this network',
+     `Each minute between ignition and the order changes losses by about ${r1(slope)} ${Math.abs(slope-1)<0.05?'household':'households'} per fire. Instant orders give ${r1(s.lag0.failed)}; 30 minutes to issue gives ${r1(s.lag30.failed)}. A fire reported at 20 minutes instead of 2 gives ${r1(s.det20.failed)} instead of ${r1(s.det2.failed)}. Detection and issuing both count toward total time from ignition to order.`],
+    [stayShare>=0.7?'The failure mode is not leaving, not traffic':'Traffic is a real part of the failure here',
+     `${pct(stayShare)} of the households that didn't get out never left home before fire arrived; ${r1(s.base.trapped)} per fire were caught on a road. ${stayShare>=0.7?'The warning and decision chain is the binding constraint, not road capacity.':'On these streets, road capacity and closures matter alongside warning time.'}`],
+    [`Night changes the toll by a factor of ${r1(nightX)}`,
+     `At 2 a.m., ${r1(s.night.failed)} households per fire don't get out, against ${r1(s.base.failed)} in the afternoon. Issuing orders in 5 minutes with a 2.5 km trigger gives ${r1(s.nightFast.failed)}. The model assumes fewer people receive a phone alert while asleep, so alerting that wakes people up matters at night.`],
+    ['Ordering everyone at once: what it buys and what it costs',
+     `Ordering everyone at once changes losses from ${r1(s.base.failed)} to ${r1(s.all.failed)} per fire. Clearance goes from ${fmtMin(s.base.t95)} to ${fmtMin(s.all.t95)}, and peak road load from ${Math.round(s.base.peak).toLocaleString()} to ${Math.round(s.all.peak).toLocaleString()} vehicles. A tighter 0.75 km trigger gives ${r1(s.trig075.failed)}; a wider 2.5 km trigger gives ${r1(s.trig25.failed)}.`],
+    ['Contraflow toward the exits',
+     `Under a mass order, contraflow changes peak road load from ${Math.round(s.all.peak).toLocaleString()} to ${Math.round(s.allcf.peak).toLocaleString()} vehicles and losses from ${r1(s.all.failed)} to ${r1(s.allcf.failed)}. Under zone orders, losses go from ${r1(s.base.failed)} to ${r1(s.cf.failed)}.`],
+    ['Informal cues and shadow evacuation',
+     `When households react to smoke and to neighbors leaving, losses go from ${r1(s.base.failed)} to ${r1(s.adaptive.failed)} per fire. ${Math.round(s.adaptive.shadow).toLocaleString()} households leave before their zone is ordered, against ${Math.round(s.base.shadow).toLocaleString()} under rule-based behavior, and total departures go from ${Math.round(s.base.departed).toLocaleString()} to ${Math.round(s.adaptive.departed).toLocaleString()}.`],
+    ['Where the risk sits',
+     `Foothill zones hold ${pct(g.footHomeShare)} of homes and ${pct(g.footShare)} of losses; a foothill home is about ${r1(g.footRatio)} times as likely not to get out as a town home. Homes on dead-end streets carry ${g.spurRatio>=1?'about '+pct(g.spurRatio-1)+' more':'about '+pct(1-g.spurRatio)+' less'} risk than other foothill homes. ${g.any.toLocaleString()} homes failed in at least one of ${d.K} fires; ${g.ge10.toLocaleString()} failed in 10% or more.`],
+  ];
+  $('findings').innerHTML=F.map(([h,p])=>`<div class="finding"><h3>${h}</h3><p>${p}</p></div>`).join('');
+  $('caveat').textContent='Roads, buildings and terrain are real; zones, fuels, fire behavior, alert reach, departure delays and road capacities are modeled and uncalibrated. Read the numbers as the shape of the tradeoffs on this road network, not as predictions.';
+  drawLag(d);
+}
+let lastStudy=null;
+function drawLag(d){
+  d=d||lastStudy; if (!d) return; const s=d.scen, cv=$('lagChart'), dpr=window.devicePixelRatio||1, w=cv.clientWidth, h=220;
+  cv.width=w*dpr; cv.height=h*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,w,h);
+  const pts=[[0,s.lag0.failed],[5,s.lag5.failed],[10,s.base.failed],[15,s.lag15.failed],[20,s.lag20.failed],[30,s.lag30.failed]];
+  const mxv=Math.max(...pts.map(p=>p[1]))*1.15, stepv=mxv>80?40:mxv>40?20:mxv>20?10:5, ymax=Math.max(20,Math.ceil(mxv/stepv)*stepv), pad={l:40,r:30,t:14,b:28}, iw=w-pad.l-pad.r, ih=h-pad.t-pad.b;
+  const X=m=>pad.l+iw*m/30, Y=v=>pad.t+ih*(1-v/ymax);
+  g.font='12px "IBM Plex Sans",system-ui'; g.fillStyle=cssVar('--muted'); g.strokeStyle=cssVar('--line'); g.lineWidth=1;
+  for (let v=0;v<=ymax;v+=ymax/4){ g.beginPath(); g.moveTo(pad.l,Y(v)); g.lineTo(w-pad.r,Y(v)); g.stroke(); g.textAlign='right'; g.fillText(Math.round(v),pad.l-6,Y(v)+4); }
+  g.textAlign='center'; for (const [m] of pts) g.fillText(m+' min',X(m),h-8);
+  g.strokeStyle=cssVar('--risk'); g.lineWidth=2.5; g.beginPath(); pts.forEach(([m,v],i)=>i?g.lineTo(X(m),Y(v)):g.moveTo(X(m),Y(v))); g.stroke();
+  g.fillStyle=cssVar('--risk'); g.font='500 12px "IBM Plex Sans",system-ui';
+  for (const [m,v] of pts){ g.beginPath(); g.arc(X(m),Y(v),3.5,0,7); g.fill(); g.textAlign=m===0?'left':'center'; g.fillText(r1(v),X(m)+(m===0?6:0),Y(v)-9); }
+}
+$('runStudy').onclick=async()=>{
+  if (busy) return; busy=true; playing=false; $('play').textContent=R&&R.t?'Resume':'Start';
+  const b=$('runStudy'); b.disabled=true; const K=+$('studyK').value, t0=Date.now();
+  try {
+    const res=await Study.run(S,world,{K,seed:(Math.random()*1e6)|0,progress:(i,n)=>new Promise(r=>{ const el=(Date.now()-t0)/1000, left=el/i*(n-i); $('studyNote').textContent=`Running scenario ${i} of ${n}, about ${Math.ceil(left/60)} min left…`; setTimeout(r,0); })});
+    lastStudy=res; renderStudy(res); $('studyNote').textContent=`Done in ${Math.round((Date.now()-t0)/1000)} s.`;
+  } catch(e){ $('studyNote').textContent='The study stopped: '+e.message; }
+  b.disabled=false; busy=false;
+};
+
+window.addEventListener('resize',()=>{ drawChart(); drawLag(); });
+legend(); windBadge(); requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

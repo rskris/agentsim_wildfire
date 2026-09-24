@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Foothill fire egress simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#EDF1F2; --panel:#FFFFFF; --ink:#1B2A33; --muted:#586A74; --line:#D2DADE; --soft:#F5F7F8;
+  --fire:#D9480F; --ember:#F08C00; --safe:#0B7A75; --road:#1971C2; --risk:#C92A2A; --caught:#7B2D8E; --alert:#6741D9; --slate:#56646C;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --page:#0D1720; --panel:#14222D; --ink:#E3EAEE; --muted:#93A4AE; --line:#27394A; --soft:#101C26;
+  --fire:#FF7A45; --ember:#FFA94D; --safe:#38C2B8; --road:#4DABF7; --risk:#FF6B6B; --caught:#C77DDB; --alert:#9775FA; --slate:#8A9AA3; } }
+:root[data-theme="dark"]{
+  --page:#0D1720; --panel:#14222D; --ink:#E3EAEE; --muted:#93A4AE; --line:#27394A; --soft:#101C26;
+  --fire:#FF7A45; --ember:#FFA94D; --safe:#38C2B8; --road:#4DABF7; --risk:#FF6B6B; --caught:#C77DDB; --alert:#9775FA; --slate:#8A9AA3; }
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.55 var(--body)}
+.wrap{max-width:1320px;margin:0 auto;padding:20px 20px 40px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 32px;margin-bottom:16px}
+h1{font:600 clamp(28px,4vw,40px)/1 var(--display);margin:0;letter-spacing:.2px}
+.lede{margin:6px 0 0;color:var(--muted);max-width:68ch}
+.clock{font:600 clamp(36px,5vw,56px)/1 var(--display);font-variant-numeric:tabular-nums;text-align:right}
+.clock small{display:block;font:400 13px/1.3 var(--body);color:var(--muted)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+@media (max-width:980px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.mapbox{padding:10px}
+.mapwrap{position:relative;width:100%;aspect-ratio:8/5;border-radius:6px;overflow:hidden;background:#9CC3D5}
+canvas#map{width:100%;height:100%;display:block;cursor:crosshair}
+.hint{position:absolute;left:10px;top:10px;background:rgba(20,30,38,.78);color:#fff;font-size:13px;padding:6px 10px;border-radius:6px;pointer-events:none;max-width:70%}
+.status{font-size:13px;color:var(--muted);min-height:20px;margin:8px 2px 0}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted);margin:8px 2px 0}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block}
+.tallies{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--line);border-top:1px solid var(--line);margin:10px -10px -10px;border-radius:0 0 10px 10px;overflow:hidden}
+@media (max-width:640px){.tallies{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tally{background:var(--panel);padding:10px 12px}
+.tally b{display:block;font:600 30px/1 var(--display);font-variant-numeric:tabular-nums}
+.tally span{font-size:12.5px;color:var(--muted)}
+.chartbox{padding:12px 14px;margin-top:16px}
+.chartbox h2,.rail h2,.cmp h2{font:600 20px/1.2 var(--display);margin:0 0 8px}
+canvas#chart{width:100%;height:150px;display:block}
+.rail{padding:4px 16px 16px}
+.rail section{padding:12px 0;border-bottom:1px solid var(--line)}
+.rail section:last-child{border-bottom:0}
+label.row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px;margin:8px 0 2px}
+label.row output{font-variant-numeric:tabular-nums;color:var(--muted)}
+input[type=range]{width:100%;accent-color:var(--fire)}
+select{width:100%;font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--soft);color:var(--ink)}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:4px}
+.seg button{border:0;border-right:1px solid var(--line);background:var(--soft);color:var(--ink);font:inherit;font-size:13.5px;padding:7px 6px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;margin-top:10px}
+.check input{accent-color:var(--fire);width:16px;height:16px}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{font:500 14px/1 var(--body);padding:10px 14px;border-radius:6px;border:1px solid var(--line);background:var(--soft);color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--fire);border-color:var(--fire);color:#fff}
+.btn:disabled{opacity:.5;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--road);outline-offset:2px}
+.note{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+.alerts{list-style:none;margin:6px 0 0;padding:0;font-size:13.5px}
+.alerts li{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--line)}
+.alerts li:last-child{border-bottom:0}
+.cmp{padding:14px;margin-top:16px}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:720px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:500;color:var(--muted);font-size:13px}
+td.n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}th.n{text-align:right}
+.empty{color:var(--muted);font-size:14px;padding:10px 0}
+.results{padding:16px;margin-top:16px}
+.results h2,.study h2{font:600 24px/1.15 var(--display);margin:0 0 4px}
+.results .sub,.study .sub{color:var(--muted);font-size:14px;margin:0 0 14px;max-width:80ch}
+.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+@media (max-width:760px){.metrics{grid-template-columns:1fr}}
+.metric{background:var(--panel);padding:14px 16px}
+.metric .v{font:600 38px/1 var(--display);font-variant-numeric:tabular-nums}
+.metric .l{font-weight:500;font-size:14px;margin-top:6px}
+.metric .d{font-size:13px;color:var(--muted);margin-top:2px}
+.twocol{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px;margin-top:18px}
+@media (max-width:860px){.twocol{grid-template-columns:1fr}}
+.twocol h3,.study h3{font:600 18px/1.2 var(--display);margin:0 0 6px}
+table.small{min-width:0;font-size:13.5px}
+.bar{height:8px;background:var(--caught);border-radius:2px;opacity:.75}
+.study{padding:16px;margin-top:16px}
+.studygrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;margin-top:18px}
+@media (max-width:980px){.studygrid{grid-template-columns:1fr}}
+canvas#lagChart{width:100%;height:220px;display:block}
+.findings{margin-top:22px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 28px}
+@media (max-width:860px){.findings{grid-template-columns:1fr}}
+.finding h3{margin-bottom:4px}
+.finding p{margin:0;font-size:14.5px;max-width:68ch}
+.caveat{margin-top:20px;padding:12px 14px;border-left:3px solid var(--ember);background:var(--soft);font-size:14px;border-radius:0}
+tr.hl td{background:var(--soft)}
+.about{margin-top:16px;padding:14px 16px;font-size:14px;color:var(--muted)}
+.about p{margin:0 0 8px;max-width:95ch}
+.about p:last-child{margin:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Foothill fire egress simulator</h1>
+      <p class="lede">A fictional Santa Barbara–style coastal community with synthetic data. Click the ridge to start a fire, decide how alerts go out, and watch which households get out in time.</p>
+    </div>
+    <div class="clock" aria-live="off"><span id="clock">T+0:00</span><small>time since ignition</small></div>
+  </header>
+
+  <div class="grid">
+    <div>
+      <div class="panel mapbox">
+        <div class="mapwrap">
+          <canvas id="map" width="800" height="500" aria-label="Simulation map. Click in the hills to set an ignition point."></canvas>
+          <div class="hint" id="hint">Click anywhere in the hills to set the ignition, then press Start.</div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over the map to inspect a location.</div>
+        <div class="tallies">
+          <div class="tally"><b id="k-safe" style="color:var(--safe)">0</b><span>reached safety</span></div>
+          <div class="tally"><b id="k-road" style="color:var(--road)">0</b><span>on the road</span></div>
+          <div class="tally"><b id="k-prep" style="color:var(--ember)">0</b><span>warned, getting ready</span></div>
+          <div class="tally"><b id="k-risk" style="color:var(--risk)">0</b><span>fire reached home first</span></div>
+          <div class="tally"><b id="k-trap" style="color:var(--caught)">0</b><span>caught on a burning road</span></div>
+        </div>
+      </div>
+
+      <div class="panel chartbox">
+        <h2>How the evacuation unfolds</h2>
+        <canvas id="chart" height="150"></canvas>
+      </div>
+    </div>
+
+    <aside class="panel rail">
+      <section>
+        <h2>Run</h2>
+        <div class="btns">
+          <button class="btn primary" id="play">Start</button>
+          <button class="btn" id="finish">Skip to end</button>
+          <button class="btn" id="reset">Reset</button>
+        </div>
+        <label class="row" for="speed">Playback speed <output id="speedOut">Normal</output></label>
+        <input type="range" id="speed" min="0" max="3" step="1" value="1">
+      </section>
+
+      <section>
+        <h2>Fire weather</h2>
+        <label class="row" for="wind">Wind pattern</label>
+        <select id="wind">
+          <option value="0">Sundowner, down-canyon from the north</option>
+          <option value="45">Santa Ana, from the northeast</option>
+          <option value="225">Onshore breeze, from the southwest</option>
+        </select>
+        <label class="row" for="ws">Wind speed <output id="wsOut">50 km/h</output></label>
+        <input type="range" id="ws" min="10" max="80" step="5" value="50">
+        <label class="row">Time of day</label>
+        <div class="seg" role="group" aria-label="Time of day">
+          <button id="day" aria-pressed="true">Afternoon</button><button id="night" aria-pressed="false">2 a.m.</button>
+        </div>
+        <div class="btns" style="margin-top:10px"><button class="btn" id="randIgn">Random ignition</button></div>
+      </section>
+
+      <section>
+        <h2>Alerting</h2>
+        <label class="row" for="det">Fire reported after <output id="detOut">8 min</output></label>
+        <input type="range" id="det" min="0" max="30" step="1" value="8">
+        <label class="row">Who gets the evacuation order</label>
+        <div class="seg" role="group" aria-label="Alert policy">
+          <button id="polTrig" aria-pressed="true">Zones near the fire</button><button id="polAll" aria-pressed="false">Everyone at once</button>
+        </div>
+        <label class="row" for="trig">Order a zone when fire is within <output id="trigOut">1.5 km</output></label>
+        <input type="range" id="trig" min="0.5" max="4" step="0.25" value="1.5">
+        <label class="row" for="lag">Time to issue each order <output id="lagOut">10 min</output></label>
+        <input type="range" id="lag" min="0" max="30" step="1" value="10">
+        <ul class="alerts" id="alerts"></ul>
+      </section>
+
+      <section>
+        <h2>People and roads</h2>
+        <label class="row">How households decide to leave</label>
+        <div class="seg" role="group" aria-label="Behavior model">
+          <button id="mRules" aria-pressed="true">Wait for the order</button><button id="mAdapt" aria-pressed="false">Read the neighborhood</button>
+        </div>
+        <p class="note" id="modeNote">Households leave when they get the official order or see flames nearby, and take the fastest open route.</p>
+        <label class="check"><input type="checkbox" id="cf"> Contraflow on the canyon arterials</label>
+      </section>
+
+      <section>
+        <h2>Map layer</h2>
+        <select id="layer">
+          <option value="none">Households and fire</option>
+          <option value="smoke">Smoke</option>
+          <option value="cong">Traffic congestion</option>
+          <option value="info">Word of mouth (neighbors leaving)</option>
+          <option value="risk">Parcel egress risk (after mapping)</option>
+        </select>
+        <div class="btns" style="margin-top:10px"><button class="btn" id="ens">Map parcel egress risk</button></div>
+        <p class="note" id="ensNote">Runs 12 fires from random ignitions under the current settings and scores each home by how often it didn't get out.</p>
+      </section>
+    </aside>
+  </div>
+
+  <section class="panel results" aria-live="polite">
+    <h2>Results for this run</h2>
+    <p class="sub" id="resSub">Start a fire to see results. They update live and settle when the run finishes.</p>
+    <div class="metrics">
+      <div class="metric"><div class="v" id="m-fail" style="color:var(--risk)">–</div><div class="l">Households that didn't get out</div><div class="d" id="m-fail-d">Fire reached home first, or caught on a burning road</div></div>
+      <div class="metric"><div class="v" id="m-order">–</div><div class="l">Ignition to first evacuation order</div><div class="d" id="m-order-d">Detection time plus time to issue</div></div>
+      <div class="metric"><div class="v" id="m-t95" style="color:var(--safe)">–</div><div class="l">95% of evacuees safe by</div><div class="d">Clearance time since ignition</div></div>
+      <div class="metric"><div class="v" id="m-peak" style="color:var(--road)">–</div><div class="l">Peak vehicles on the road</div><div class="d" id="m-peak-d">Household vehicles at the busiest moment</div></div>
+      <div class="metric"><div class="v" id="m-shadow" style="color:var(--alert)">–</div><div class="l">Shadow evacuation</div><div class="d">Households that left before their zone was ordered</div></div>
+      <div class="metric"><div class="v" id="m-parcel">–</div><div class="l">Parcel egress risk</div><div class="d" id="m-parcel-d">Map parcel egress risk to score every home across 12 fires</div></div>
+    </div>
+    <div class="twocol">
+      <div>
+        <h3>Zones ranked by risk</h3>
+        <div class="tablewrap"><table class="small"><thead><tr><th>Zone</th><th class="n">Homes</th><th class="n">Fire reached</th><th class="n">Didn't get out</th><th class="n">Ordered at</th></tr></thead><tbody id="zoneBody"></tbody></table></div>
+        <p class="note">Didn't get out counts a zone's households wherever they were caught, including on roads outside the zone.</p>
+      </div>
+      <div>
+        <h3>Worst bottlenecks</h3>
+        <div class="tablewrap"><table class="small"><thead><tr><th>Road</th><th class="n">Vehicle-minutes stuck in queues</th><th style="width:30%"></th></tr></thead><tbody id="bnBody"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="panel cmp">
+    <h2>Compare runs</h2>
+    <p class="note" style="margin:0 0 8px">Each finished run is added here. Change one setting at a time to see what it buys you.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Run</th><th>Conditions</th><th>Alerting</th><th>Behavior and roads</th><th class="n">Didn't get out</th><th class="n">Share of homes fire reached</th><th class="n">First order</th><th class="n">95% out by</th><th class="n">Peak on road</th><th class="n">Shadow evacuation</th></tr></thead>
+        <tbody id="cmpBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="cmpEmpty">No runs yet. Start a fire to add the first one.</div>
+    <div class="btns" style="margin-top:8px"><button class="btn" id="clearCmp">Clear table</button></div>
+  </div>
+
+  <section class="panel study">
+    <h2>What the scenarios show</h2>
+    <p class="sub" id="studySub"></p>
+    <div class="studygrid">
+      <div>
+        <h3>Scenario comparison</h3>
+        <div class="tablewrap"><table class="small"><thead><tr><th>Scenario (one change from baseline)</th><th class="n">Didn't get out</th><th class="n">Caught on road</th><th class="n">First order</th><th class="n">95% out by</th><th class="n">Peak on road</th></tr></thead><tbody id="studyBody"></tbody></table></div>
+      </div>
+      <div>
+        <h3>Every minute of delay costs lives</h3>
+        <canvas id="lagChart" height="220" aria-label="Line chart of households that didn't get out versus minutes to issue each order"></canvas>
+        <p class="note">Households that didn't get out per fire, by time to issue each order. Afternoon, zones within 1.5 km, fire reported at 8 minutes.</p>
+      </div>
+    </div>
+    <div class="findings" id="findings"></div>
+    <div class="caveat" id="caveat"></div>
+    <div class="btns" style="margin-top:14px"><button class="btn" id="rerun">Re-run the study with 24 new fires</button></div>
+    <p class="note" id="rerunNote">Takes about a minute. The map pauses while it runs.</p>
+  </section>
+
+  <div class="panel about">
+    <p>Under the hood: a stochastic cellular fire-spread model driven by fuel, slope and wind with ember spotting; about 1,570 synthetic households as agents; and a queue-based road network in the style of MATSim, with limited storage and spillback. Roads close when fire crosses them. Smoke, congestion and word of mouth live in shared fields on a coarse grid that agents read and write.</p>
+    <p>Everything here is synthetic and uncalibrated. Geography, household locations, fire behavior and response rates are illustrative, not a model of any real place or event.</p>
+  </div>
+</div>
+
+<script>
+/*SIM*/
+</script>
+<script>
+/*STUDY*/
+const BAKED=/*BAKED*/;
+</script>
+<script>
+(function(){
+const S = Sim, world = S.buildWorld(), W = S.W, H = S.H, PX = 5;
+const $ = id => document.getElementById(id);
+const map = $('map'), ctx = map.getContext('2d');
+const P = { ign:{x:80,y:28}, windFrom:0, windKmh:50, night:false, detectMin:8, trigKm:1.5, lagMin:10, alertAll:false, mode:'rules', contraflow:false, seed:1 };
+let R = null, playing = false, started = false, logged = false, runNo = 0, risk = null, riskRuns = 0, hoverCell = -1, frame = 0;
+const speeds = [{n:'Slow',every:3,per:1},{n:'Normal',every:1,per:1},{n:'Fast',every:1,per:4},{n:'Very fast',every:1,per:12}];
+
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+// ---------- base map ----------
+const base = document.createElement('canvas'); base.width = W*PX; base.height = H*PX;
+(function drawBase(){
+  const b = base.getContext('2d'), e = world.elev, lu = world.lu;
+  const pal = { 0:[156,195,213], 1:[226,214,182], 2:[214,211,202], 3:[196,203,164], 4:[150,160,112] };
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    const c=y*W+x, col=pal[lu[c]];
+    let sh=1;
+    if (lu[c]!==0){ const ex=(e[y*W+Math.max(0,x-1)]-e[y*W+Math.min(W-1,x+1)]), ey=(e[Math.max(0,y-1)*W+x]-e[Math.min(H-1,y+1)*W+x]); sh=Math.max(.86,Math.min(1.1,1+(ex*0.4+ey)*0.0025)); }
+    b.fillStyle=`rgb(${col[0]*sh|0},${col[1]*sh|0},${col[2]*sh|0})`; b.fillRect(x*PX,y*PX,PX,PX);
+  }
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    const c=y*W+x; if (lu[c]===0) continue;
+    const k=Math.floor(e[c]/50);
+    if (x<W-1 && Math.floor(e[c+1]/50)!==k){ const idx=Math.max(k,Math.floor(e[c+1]/50))%4===0; b.fillStyle=idx?'rgba(90,70,40,.55)':'rgba(90,70,40,.28)'; b.fillRect(x*PX+PX-0.5,y*PX,1,PX); }
+    if (y<H-1 && Math.floor(e[c+W]/50)!==k){ const idx=Math.max(k,Math.floor(e[c+W]/50))%4===0; b.fillStyle=idx?'rgba(90,70,40,.55)':'rgba(90,70,40,.28)'; b.fillRect(x*PX,y*PX+PX-0.5,PX,1); }
+  }
+  b.font='500 13px "IBM Plex Sans",system-ui,sans-serif'; b.fillStyle='rgba(40,50,30,.75)';
+  b.fillText('Coast range ridge',60,40); b.fillStyle='rgba(30,70,100,.8)'; b.fillText('Ocean',380,490);
+})();
+
+// zone label positions
+const zonePos = S.ZONES.map((z,i)=>{ const hs=world.homes.filter(h=>h.zone===i); const x=hs.reduce((a,h)=>a+h.x,0)/hs.length, y=hs.reduce((a,h)=>a+h.y,0)/hs.length; return {x,y,n:hs.length}; });
+
+// ---------- sim control ----------
+function resetRun(){
+  R = S.newRun(world, P); playing=false; started=false; logged=false;
+  $('play').textContent='Start'; $('hint').style.display='';
+  renderAlerts(); updateTallies(); drawChart(); renderResults();
+}
+function describe(){
+  const wind = {0:'Sundowner',45:'Santa Ana',225:'Onshore'}[P.windFrom];
+  return {
+    cond:`${wind} ${P.windKmh} km/h, ${P.night?'2 a.m.':'afternoon'}`,
+    alert: P.alertAll ? `Everyone at once, reported at ${P.detectMin} min, ${P.lagMin} min to issue` : `Zones within ${P.trigKm} km, reported at ${P.detectMin} min, ${P.lagMin} min to issue`,
+    beh: (P.mode==='rules'?'Wait for the order':'Read the neighborhood') + (P.contraflow?', contraflow':'')
+  };
+}
+function logRun(){
+  if (logged) return; logged=true; runNo++;
+  const s=S.summary(R), d=describe(), tr=document.createElement('tr');
+  tr.innerHTML=`<td>${runNo}</td><td>${d.cond}</td><td>${d.alert}</td><td>${d.beh}</td><td class="n" style="color:var(--risk)">${s.failed}</td><td class="n">${s.threatened?pct(s.pctThreatened):'–'}</td><td class="n">${fmtMin(s.firstOrderMin)}</td><td class="n">${fmtMin(s.t95)}</td><td class="n">${s.peak}</td><td class="n">${s.shadow}</td>`;
+  $('cmpBody').prepend(tr); $('cmpEmpty').style.display='none';
+}
+function pct(x){ return Math.round(x*100)+'%'; }
+function fmtMin(m){ if (m==null) return '–'; m=Math.round(m); return `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`; }
+function renderResults(){
+  const s=S.summary(R);
+  if (!started){ ['m-fail','m-order','m-t95','m-peak','m-shadow'].forEach(id=>$(id).textContent='–'); $('zoneBody').innerHTML=''; $('bnBody').innerHTML=''; $('resSub').textContent='Start a fire to see results. They update live and settle when the run finishes.'; renderParcel(); return; }
+  const d=describe();
+  $('resSub').textContent=(R.done?'Final results. ':'Live, still running. ')+`${d.cond}. ${d.alert}. ${d.beh}.`;
+  $('m-fail').textContent=s.failed;
+  $('m-fail-d').textContent= s.threatened? `${pct(s.pctThreatened)} of the ${s.threatened} homes the fire reached. ${s.atrisk} never left, ${s.trapped} caught on a road.` : 'Fire has not reached any homes yet.';
+  $('m-order').textContent= s.firstOrderMin==null? 'None yet' : 'T+'+fmtMin(s.firstOrderMin);
+  $('m-order-d').textContent= s.firstOrderMin==null? 'No zone has been ordered to leave' : `Fire reported at ${P.detectMin} min, ${P.lagMin} min to issue`;
+  $('m-t95').textContent= s.t95==null? '–' : 'T+'+fmtMin(s.t95);
+  $('m-peak').textContent=s.peak;
+  $('m-peak-d').textContent=`Household vehicles at the busiest moment, out of ${s.departed.toLocaleString()} that left`;
+  $('m-shadow').textContent=s.shadow;
+  $('zoneBody').innerHTML=s.zones.map(z=>`<tr><td>${z.id} ${z.foot?'foothills':'town'}</td><td class="n">${z.homes}</td><td class="n">${z.threatened}</td><td class="n" style="color:${z.failed?'var(--risk)':'inherit'}">${z.failed}</td><td class="n">${z.orderMin==null?'Not ordered':'T+'+fmtMin(z.orderMin)}</td></tr>`).join('');
+  const mx=s.bottlenecks.length? s.bottlenecks[0].vehMin:1;
+  $('bnBody').innerHTML= s.bottlenecks.length? s.bottlenecks.map(b=>`<tr><td>${b.name}</td><td class="n">${Math.round(b.vehMin).toLocaleString()}</td><td><div class="bar" style="width:${Math.max(4,100*b.vehMin/mx)}%"></div></td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--muted)">No queues yet</td></tr>';
+  renderParcel();
+}
+function renderParcel(){
+  if (!risk){ $('m-parcel').textContent='–'; return; }
+  let hi=0, f=0, nf=0, t=0, nt=0;
+  world.homes.forEach((h,i)=>{ const p=risk[i]/riskRuns; if (p>=0.1) hi++; if (S.ZONES[h.zone].foot){ f+=p; nf++; } else { t+=p; nt++; } });
+  $('m-parcel').textContent=hi;
+  const ratio = t>0 ? `, and foothill homes are ${Math.round((f/nf)/(t/nt))} times as likely not to get out as town homes` : '';
+  $('m-parcel-d').textContent=`Homes that didn't get out in 10% or more of ${riskRuns} fires${ratio}.`;
+}
+function fmtT(ticks){ const m=Math.round(ticks*S.DT/60); return `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`; }
+
+function renderAlerts(){
+  const ul=$('alerts'); ul.innerHTML='';
+  if (!R || !R.alertLog.length){ const li=document.createElement('li'); li.innerHTML='<span style="color:var(--muted)">No evacuation orders yet</span>'; ul.appendChild(li); return; }
+  for (const a of R.alertLog){ const li=document.createElement('li'); li.innerHTML=`<span>Zone ${a.zone} ordered to leave</span><span>T+${fmtT(a.t)}</span>`; ul.appendChild(li); }
+}
+function updateTallies(){
+  const c=S.counts(R);
+  $('k-safe').textContent=c.safe.toLocaleString(); $('k-road').textContent=c.onroad; $('k-prep').textContent=c.preparing;
+  $('k-risk').textContent=c.atrisk; $('k-trap').textContent=c.trapped; $('clock').textContent='T+'+fmtT(R.t);
+}
+
+// ---------- drawing ----------
+const HC = { 0:'#5B6970', 1:'#F08C00', 2:'#1971C2', 3:'#1971C2', 4:'#0B7A75', 5:'#C92A2A', 6:'#7B2D8E' };
+function riskColor(p){ if (p<=0) return '#6FB7A8'; if (p<0.1) return '#F2C94C'; if (p<0.3) return '#F08C00'; return '#C92A2A'; }
+
+function draw(){
+  const layer=$('layer').value;
+  ctx.drawImage(base,0,0);
+  // fire
+  const fire=R.fire;
+  for (let c=0;c<fire.length;c++){
+    if (!fire[c]) continue;
+    const x=c%W, y=(c/W)|0;
+    if (fire[c]===2){ ctx.fillStyle='rgba(38,30,26,.72)'; }
+    else { ctx.fillStyle = ((R.burnLeft[c]+frame)%6<3)?'#FF5A1F':'#FFB020'; }
+    ctx.fillRect(x*PX,y*PX,PX,PX);
+  }
+  // fields
+  const B=S.BS*PX;
+  if (layer==='smoke'||layer==='info'||layer==='cong'){
+    let cong=null;
+    if (layer==='cong'){ cong=new Float32Array(S.BW*S.BH); for (const e of world.edges){ const q=R.eq[e.id].length; if(q){ const b=((e.my|0)>>2)*S.BW+((e.mx|0)>>2); cong[b]+=q; } } }
+    for (let b=0;b<S.BW*S.BH;b++){
+      const x=b%S.BW, y=(b/S.BW)|0; let a=0, col='';
+      if (layer==='smoke'){ a=Math.min(.62,R.smoke[b]/14); col='70,62,88'; }
+      else if (layer==='info'){ a=Math.min(.6,R.info[b]/2.5); col='11,122,117'; }
+      else { a=Math.min(.65,cong[b]/12); col='201,42,42'; }
+      if (a>0.02){ ctx.fillStyle=`rgba(${col},${a})`; ctx.fillRect(x*B,y*B,B,B); }
+    }
+  }
+  // roads
+  ctx.lineCap='round';
+  for (const e of world.edges){
+    if (e.from>e.to) continue;
+    const a=world.nodes[e.from], b=world.nodes[e.to];
+    const rev=world.nodes[e.to].out.find(id=>world.edges[id].to===e.from);
+    const ratio=Math.max(R.eq[e.id].length/R.estore[e.id], rev!=null?R.eq[rev].length/R.estore[rev]:0);
+    const closed=R.eburn[e.id]>0;
+    ctx.lineWidth = e.type==='hwy'?3.6:e.type==='art'?2.6:1.7;
+    ctx.strokeStyle = closed?'#B00020': ratio>0.66?'#C92A2A': ratio>0.33?'#F08C00': ratio>0.05?'#E8B84A':'#4E5A61';
+    ctx.setLineDash(closed?[4,3]:[]);
+    ctx.beginPath(); ctx.moveTo(a.x*PX+2.5,a.y*PX+2.5); ctx.lineTo(b.x*PX+2.5,b.y*PX+2.5); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // homes
+  for (const h of world.homes){
+    if (layer==='risk'){ ctx.fillStyle = risk? riskColor(risk[h.id]/riskRuns):'#8A979E'; }
+    else ctx.fillStyle = HC[R.st[h.id]];
+    ctx.fillRect(h.x*PX+1,h.y*PX+1,3,3);
+  }
+  // vehicles
+  ctx.fillStyle='#FFFFFF'; ctx.strokeStyle='#14222D'; ctx.lineWidth=0.8;
+  for (const e of world.edges){
+    const q=R.eq[e.id]; if (!q.length) continue;
+    const a=world.nodes[e.from], b=world.nodes[e.to], gap=12.75/e.len;
+    let lim=1;
+    for (let i=0;i<q.length;i++){
+      const ag=q[i], start=R.exitT[ag]-e.tt; let pr=Math.min(1,Math.max(0,(R.t-start)/e.tt)); pr=Math.min(pr,lim); lim=pr-gap;
+      const px=(a.x+(b.x-a.x)*pr)*PX+2.5, py=(a.y+(b.y-a.y)*pr)*PX+2.5;
+      const ox=(b.y-a.y), oy=-(b.x-a.x), ol=Math.hypot(ox,oy)||1;
+      ctx.beginPath(); ctx.arc(px+ox/ol*1.8,py+oy/ol*1.8,1.9,0,7); ctx.fill(); ctx.stroke();
+    }
+  }
+  // zone labels
+  ctx.font='600 13px "Barlow Condensed","Arial Narrow",sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  S.ZONES.forEach((z,i)=>{
+    const p=zonePos[i], alerted=R.zoneAlert[i]>=0 && R.t>=R.zoneAlert[i];
+    const x=p.x*PX, y=(z.foot? p.y-5 : p.y)*PX;
+    ctx.fillStyle = alerted?'#6741D9':'rgba(255,255,255,.82)'; ctx.beginPath(); ctx.roundRect(x-15,y-9,30,18,4); ctx.fill();
+    ctx.fillStyle = alerted?'#fff':'#2B3A42'; ctx.fillText(z.id,x,y+1);
+  });
+  // exits
+  ctx.font='500 12px "IBM Plex Sans",system-ui,sans-serif';
+  for (const n of world.nodes) if (n.exit){
+    const x=n.x*PX, y=n.y*PX, left=n.x<10;
+    ctx.fillStyle='rgba(11,122,117,.95)'; ctx.beginPath(); ctx.roundRect(left?x+4:x-94,y-26,90,18,4); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.fillText(left?'Safety, west':'Safety, east',left?x+49:x-49,y-16);
+  }
+  // ignition
+  const ix=P.ign.x*PX+2.5, iy=P.ign.y*PX+2.5;
+  ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(ix,iy,9,0,7); ctx.stroke();
+  ctx.strokeStyle='#D9480F'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(ix,iy,9,0,7); ctx.stroke();
+  // wind arrow
+  const wx=R.wx, wy=R.wy, cx=740, cy=40, L=18;
+  ctx.fillStyle='rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(cx,cy,28,0,7); ctx.fill();
+  ctx.strokeStyle='#1B2A33'; ctx.lineWidth=2.2; ctx.beginPath(); ctx.moveTo(cx-wx*L,cy-wy*L); ctx.lineTo(cx+wx*L,cy+wy*L); ctx.stroke();
+  const ang=Math.atan2(wy,wx); ctx.beginPath(); ctx.moveTo(cx+wx*L,cy+wy*L); ctx.lineTo(cx+wx*L-Math.cos(ang-0.5)*8,cy+wy*L-Math.sin(ang-0.5)*8); ctx.moveTo(cx+wx*L,cy+wy*L); ctx.lineTo(cx+wx*L-Math.cos(ang+0.5)*8,cy+wy*L-Math.sin(ang+0.5)*8); ctx.stroke();
+  ctx.fillStyle='#1B2A33'; ctx.font='500 11px "IBM Plex Sans",system-ui'; ctx.fillText(P.windKmh+' km/h',cx,cy+40);
+}
+
+function legend(){
+  const layer=$('layer').value, L=$('legend');
+  let items;
+  if (layer==='risk') items=[['#6FB7A8','Got out in every run'],['#F2C94C','Under 10% of runs'],['#F08C00','10–30%'],['#C92A2A','Over 30%']];
+  else items=[['#5B6970','Not yet warned'],['#F08C00','Getting ready'],['#1971C2','On the road'],['#0B7A75','Reached safety'],['#C92A2A','Fire reached home first'],['#7B2D8E','Caught on road'],['#FF5A1F','Active fire'],['#B00020','Road closed by fire']];
+  if (layer==='smoke') items.push(['rgba(70,62,88,.6)','Smoke density']);
+  if (layer==='info') items.push(['rgba(11,122,117,.55)','Neighbors seen leaving']);
+  if (layer==='cong') items.push(['rgba(201,42,42,.5)','Vehicles queued']);
+  L.innerHTML=items.map(([c,t])=>`<span><i class="sw" style="background:${c}"></i>${t}</span>`).join('');
+}
+
+function drawChart(){
+  const cv=$('chart'), dpr=window.devicePixelRatio||1, w=cv.clientWidth, h=150;
+  cv.width=w*dpr; cv.height=h*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,w,h);
+  const ser=R?R.series:[]; const tot=world.homes.length;
+  const pad={l:40,r:10,t:8,b:22}, iw=w-pad.l-pad.r, ih=h-pad.t-pad.b;
+  const tmax=Math.max(120, ser.length? ser[ser.length-1].t*S.DT/60:0);
+  g.strokeStyle=cssVar('--line'); g.fillStyle=cssVar('--muted'); g.font='12px "IBM Plex Sans",system-ui'; g.lineWidth=1;
+  for (let i=0;i<=4;i++){ const y=pad.t+ih*i/4; g.beginPath(); g.moveTo(pad.l,y); g.lineTo(w-pad.r,y); g.stroke(); g.textAlign='right'; g.fillText(Math.round(tot*(1-i/4)),pad.l-6,y+4); }
+  g.textAlign='center';
+  for (let m=0;m<=tmax;m+=30){ const x=pad.l+iw*m/tmax; g.fillText(`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`,x,h-6); }
+  const lines=[['safe','--safe'],['onroad','--road'],['preparing','--ember'],['atrisk','--risk'],['trapped','--caught']];
+  for (const [k,v] of lines){
+    g.strokeStyle=cssVar(v); g.lineWidth=2; g.beginPath();
+    ser.forEach((s,i)=>{ const x=pad.l+iw*(s.t*S.DT/60)/tmax, y=pad.t+ih*(1-s[k]/tot); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.stroke();
+  }
+}
+
+// ---------- loop ----------
+function tick(){
+  frame++;
+  if (playing && R && !R.done){
+    const sp=speeds[+$('speed').value];
+    if (frame%sp.every===0) for (let i=0;i<sp.per && !R.done;i++) S.step(R);
+    if (frame%6===0){ updateTallies(); drawChart(); renderAlerts(); renderResults(); }
+    if (R.done){ playing=false; $('play').textContent='Finished'; updateTallies(); drawChart(); renderAlerts(); renderResults(); logRun(); }
+  }
+  draw();
+  requestAnimationFrame(tick);
+}
+
+// ---------- controls ----------
+function setPressed(on,off){ $(on).setAttribute('aria-pressed','true'); $(off).setAttribute('aria-pressed','false'); }
+function changed(){ resetRun(); }
+$('play').onclick=()=>{
+  if (R.done){ resetRun(); }
+  playing=!playing; started=true; $('hint').style.display='none';
+  $('play').textContent=playing?'Pause':'Resume';
+};
+$('finish').onclick=()=>{ started=true; $('hint').style.display='none'; while(!R.done) S.step(R); playing=false; $('play').textContent='Finished'; updateTallies(); drawChart(); renderAlerts(); renderResults(); logRun(); };
+$('reset').onclick=resetRun;
+$('speed').oninput=e=>{ $('speedOut').textContent=speeds[+e.target.value].n; };
+$('wind').onchange=e=>{ P.windFrom=+e.target.value; changed(); };
+$('ws').oninput=e=>{ P.windKmh=+e.target.value; $('wsOut').textContent=P.windKmh+' km/h'; };
+$('ws').onchange=changed;
+$('day').onclick=()=>{ P.night=false; setPressed('day','night'); changed(); };
+$('night').onclick=()=>{ P.night=true; setPressed('night','day'); changed(); };
+$('randIgn').onclick=()=>{ P.ign=S.randomIgnition(world,Math.random); P.seed=(Math.random()*1e6)|0; changed(); };
+$('det').oninput=e=>{ P.detectMin=+e.target.value; $('detOut').textContent=P.detectMin+' min'; }; $('det').onchange=changed;
+$('trig').oninput=e=>{ P.trigKm=+e.target.value; $('trigOut').textContent=P.trigKm+' km'; }; $('trig').onchange=changed;
+$('lag').oninput=e=>{ P.lagMin=+e.target.value; $('lagOut').textContent=P.lagMin+' min'; }; $('lag').onchange=changed;
+$('polTrig').onclick=()=>{ P.alertAll=false; setPressed('polTrig','polAll'); $('trig').disabled=false; changed(); };
+$('polAll').onclick=()=>{ P.alertAll=true; setPressed('polAll','polTrig'); $('trig').disabled=true; changed(); };
+const notes={ rules:'Households leave when they get the official order or see flames nearby, and take the fastest open route.',
+  adaptive:'Households also react to smoke and to neighbors leaving, and steer around congestion and fire. Watch for shadow evacuation from zones that were never ordered out.' };
+$('mRules').onclick=()=>{ P.mode='rules'; setPressed('mRules','mAdapt'); $('modeNote').textContent=notes.rules; changed(); };
+$('mAdapt').onclick=()=>{ P.mode='adaptive'; setPressed('mAdapt','mRules'); $('modeNote').textContent=notes.adaptive; changed(); };
+$('cf').onchange=e=>{ P.contraflow=e.target.checked; changed(); };
+$('layer').onchange=legend;
+$('clearCmp').onclick=()=>{ $('cmpBody').innerHTML=''; $('cmpEmpty').style.display=''; runNo=0; };
+
+function cellFromEvent(ev){
+  const r=map.getBoundingClientRect(); const x=Math.floor((ev.clientX-r.left)/r.width*W), y=Math.floor((ev.clientY-r.top)/r.height*H);
+  return (x<0||y<0||x>=W||y>=H)?null:{x,y};
+}
+map.addEventListener('click',ev=>{
+  const p=cellFromEvent(ev); if(!p) return;
+  const lu=world.lu[p.y*W+p.x];
+  if (lu===S.LU.OCEAN || lu===S.LU.BEACH){ $('status').textContent='Fires need fuel. Pick a spot on land.'; return; }
+  P.ign=p; P.seed=(Math.random()*1e6)|0; resetRun();
+});
+const LUN=['ocean','beach','town','foothill neighborhoods','chaparral'];
+map.addEventListener('mousemove',ev=>{
+  const p=cellFromEvent(ev); if(!p) return; const c=p.y*W+p.x;
+  let s=`${LUN[world.lu[c]][0].toUpperCase()+LUN[world.lu[c]].slice(1)}, ${Math.round(world.elev[c])} m elevation`;
+  if (R.arrival[c]>=0) s+=`, fire arrived T+${fmtT(R.arrival[c])}`;
+  const h=world.homes.find(h=>Math.abs(h.x-p.x)<=0 && Math.abs(h.y-p.y)<=0);
+  if (h){
+    s+=`. Home in zone ${S.ZONES[h.zone].id}`;
+    const lbl=['not yet warned','getting ready','waiting to get on the road','on the road','reached safety','fire reached home first','caught on a burning road'][R.st[h.id]];
+    s+=`: ${lbl}`;
+    if (R.departT[h.id]>=0) s+=`, left T+${fmtT(R.departT[h.id])}`;
+    if (risk && riskRuns) s+=`. Didn't get out in ${risk[h.id]} of ${riskRuns} mapped fires`;
+  }
+  $('status').textContent=s+'.';
+});
+
+$('ens').onclick=()=>{
+  const btn=$('ens'); btn.disabled=true; const K=12; let i=0;
+  const acc=new Uint16Array(world.homes.length), rng=S.mulberry32(Date.now()&0xffff);
+  function one(){
+    const ign=S.randomIgnition(world,rng);
+    const Rr=S.newRun(world,Object.assign({},P,{ign,seed:(rng()*1e6)|0}));
+    S.runToEnd(Rr);
+    for (let h=0;h<acc.length;h++) if (Rr.st[h]===S.ST.ATRISK||Rr.st[h]===S.ST.TRAPPED) acc[h]++;
+    i++; $('ensNote').textContent=`Running fire ${i} of ${K}…`;
+    if (i<K) setTimeout(one,0);
+    else {
+      risk=acc; riskRuns=K; btn.disabled=false;
+      let hi=0; for (const v of acc) if (v/K>=0.1) hi++;
+      $('ensNote').textContent=`Done. ${hi} of ${acc.length.toLocaleString()} homes failed to get out in at least 10% of the ${K} fires under these settings. Hover a home for its count.`;
+      $('layer').value='risk'; legend(); renderParcel();
+    }
+  }
+  $('ensNote').textContent=`Running fire 1 of ${K}…`; setTimeout(one,20);
+};
+
+
+// ---------- policy study ----------
+let STUDY = BAKED;
+function r1(x){ return (Math.round(x*10)/10).toString(); }
+function renderStudy(){
+  const d=STUDY, s=d.scen, g=d.geo;
+  $('studySub').textContent=`${d.K} fires from random ignitions under a 50 km/h Sundowner, run through every scenario. Each scenario uses the same fires and random draws, so the differences come from the policy, not the fire. Values are means per fire across ${g.homes.toLocaleString()} households.`;
+  $('studyBody').innerHTML=Study.TABLE_ROWS.map(k=>{ const r=s[k]; return `<tr class="${k==='base'?'hl':''}"><td>${r.label}</td><td class="n" style="color:var(--risk)">${r1(r.failed)}</td><td class="n">${r1(r.trapped)}</td><td class="n">${fmtMin(r.firstOrderMin)}</td><td class="n">${fmtMin(r.t95)}</td><td class="n">${Math.round(r.peak)}</td></tr>`; }).join('');
+  const slope=(s.lag30.failed-s.lag0.failed)/30;
+  const F=[
+    ['Minutes of warning matter more than anything else',
+     `Each minute between ignition and the order costs about ${r1(slope)} households per fire. Going from instant orders to 30 minutes to issue takes losses from ${r1(s.lag0.failed)} to ${r1(s.lag30.failed)}. A fire reported at 20 minutes instead of 2 costs ${r1(s.det20.failed)} households instead of ${r1(s.det2.failed)}. Manage total time from ignition to order: detection and issuing both count.`],
+    ['The failure mode is not leaving, not traffic',
+     `${pct(s.base.atrisk/s.base.failed)} of the households that didn't get out never left home before fire arrived. Only ${r1(s.base.trapped)} per fire were caught on a road. In this network the constraint is the warning and decision chain, not road capacity.`],
+    [`Night multiplies the toll by ${r1(s.night.failed/s.base.failed)}, and faster orders don't close the gap`,
+     `At 2 a.m., ${r1(s.night.failed)} households per fire don't get out, against ${r1(s.base.failed)} in the afternoon. Issuing orders in 5 minutes with a 2.5 km trigger still leaves ${r1(s.nightFast.failed)}. The limit at night is reach: fewer people receive a phone alert while asleep. Alerting that wakes people up, like sirens, high-low tones and door-to-door, matters more than speed.`],
+    ['Ordering more people out changes the traffic far more than the toll',
+     `Ordering everyone at once saves ${r1(s.base.failed-s.all.failed)} households per fire, because the people at risk are nearest the fire and need lead time. But clearance drops from ${Math.round(s.base.t95)} to ${Math.round(s.all.t95)} minutes, and peak road load rises from ${Math.round(s.base.peak)} to ${Math.round(s.all.peak)} vehicles. A tighter 0.75 km trigger raises losses to ${r1(s.trig075.failed)}.`],
+    ['Contraflow is congestion insurance for mass orders',
+     `Under a mass order, contraflow on the canyon arterials cuts peak road load by ${pct(1-s.allcf.peak/s.all.peak)}, from ${Math.round(s.all.peak)} to ${Math.round(s.allcf.peak)} vehicles. Under zone orders the toll barely moves, from ${r1(s.base.failed)} to ${r1(s.cf.failed)}.`],
+    ['Informal cues save lives and create shadow evacuation',
+     `When households react to smoke and to neighbors leaving, losses fall from ${r1(s.base.failed)} to ${r1(s.adaptive.failed)} per fire. But ${Math.round(s.adaptive.shadow)} households leave before their zone is ordered, against ${Math.round(s.base.shadow)} under rule-based behavior. Total departures rise from ${Math.round(s.base.departed).toLocaleString()} to ${Math.round(s.adaptive.departed).toLocaleString()}. A rule-based model misses both the benefit and the traffic.`],
+    ['Risk is geographic and shallow, so score parcels across many fires',
+     `Foothill zones hold ${pct(g.footHomeShare)} of homes but ${pct(g.footShare)} of losses, and a foothill home is about ${Math.round(g.footRatio)} times as likely not to get out as a town home. Homes on dead-end lanes carry about ${pct(Math.max(0,g.spurRatio-1))} more risk again. ${g.any} homes failed in at least one of ${d.K} fires, but only ${g.ge10} failed in 10% or more. A single-fire answer is misleading; a parcel egress score needs an ensemble of fires.`],
+  ];
+  $('findings').innerHTML=F.map(([h,p])=>`<div class="finding"><h3>${h}</h3><p>${p}</p></div>`).join('');
+  $('caveat').textContent='Every parameter here is synthetic and uncalibrated: alert reach, departure delays, fire behavior, road capacities and the geography itself. The absolute numbers mean nothing. What carries over is the shape of the tradeoffs and the fact that the tool can quantify them. Some findings would likely change on a real network; the traffic finding in particular could flip in a place with more constrained roads, which is the case for calibrating it.';
+  drawLag();
+}
+function drawLag(){
+  const s=STUDY.scen, cv=$('lagChart'), dpr=window.devicePixelRatio||1, w=cv.clientWidth, h=220;
+  cv.width=w*dpr; cv.height=h*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,w,h);
+  const pts=[[0,s.lag0.failed],[5,s.lag5.failed],[10,s.base.failed],[15,s.lag15.failed],[20,s.lag20.failed],[30,s.lag30.failed]];
+  const ymax=Math.ceil(Math.max(...pts.map(p=>p[1]))/10)*10+10, pad={l:40,r:30,t:14,b:28}, iw=w-pad.l-pad.r, ih=h-pad.t-pad.b;
+  const X=m=>pad.l+iw*m/30, Y=v=>pad.t+ih*(1-v/ymax);
+  g.font='12px "IBM Plex Sans",system-ui'; g.fillStyle=cssVar('--muted'); g.strokeStyle=cssVar('--line'); g.lineWidth=1;
+  for (let v=0;v<=ymax;v+=ymax/4){ g.beginPath(); g.moveTo(pad.l,Y(v)); g.lineTo(w-pad.r,Y(v)); g.stroke(); g.textAlign='right'; g.fillText(Math.round(v),pad.l-6,Y(v)+4); }
+  g.textAlign='center'; for (const [m] of pts) g.fillText(m+' min',X(m),h-8);
+  g.strokeStyle=cssVar('--risk'); g.lineWidth=2.5; g.beginPath(); pts.forEach(([m,v],i)=>i?g.lineTo(X(m),Y(v)):g.moveTo(X(m),Y(v))); g.stroke();
+  g.fillStyle=cssVar('--risk'); g.font='500 12px "IBM Plex Sans",system-ui';
+  for (const [m,v] of pts){ g.beginPath(); g.arc(X(m),Y(v),3.5,0,7); g.fill(); g.textAlign=m===0?'left':'center'; g.fillText(r1(v),X(m)+(m===0?6:0),Y(v)-9); }
+}
+$('rerun').onclick=async()=>{
+  const b=$('rerun'); b.disabled=true;
+  const seed=(Math.random()*1e6)|0;
+  const res=await Study.run(S,world,{K:24,seed,progress:(i,n)=>new Promise(r=>{ $('rerunNote').textContent=`Running scenario ${i} of ${n}…`; setTimeout(r,0); })});
+  STUDY=res; renderStudy(); b.disabled=false;
+  $('rerunNote').textContent='Done. The table, chart and findings now reflect the new set of fires.';
+};
+
+window.addEventListener('resize',()=>{ drawChart(); drawLag(); });
+renderStudy();
+legend(); resetRun(); requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "agentsim_wildfire",
+  "version": "0.1.0",
+  "description": "Agent-based wildfire evacuation (egress) simulator with swarm-style shared fields, running in the browser on Overture Maps data.",
+  "private": true,
+  "scripts": {
+    "bake": "node tools/bake_study.js",
+    "build": "node tools/build.js",
+    "test": "node --test",
+    "serve": "python3 -m http.server 8000 --directory docs"
+  },
+  "engines": { "node": ">=18" }
+}

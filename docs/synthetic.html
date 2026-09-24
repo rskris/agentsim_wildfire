@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Foothill fire egress simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#EDF1F2; --panel:#FFFFFF; --ink:#1B2A33; --muted:#586A74; --line:#D2DADE; --soft:#F5F7F8;
+  --fire:#D9480F; --ember:#F08C00; --safe:#0B7A75; --road:#1971C2; --risk:#C92A2A; --caught:#7B2D8E; --alert:#6741D9; --slate:#56646C;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --page:#0D1720; --panel:#14222D; --ink:#E3EAEE; --muted:#93A4AE; --line:#27394A; --soft:#101C26;
+  --fire:#FF7A45; --ember:#FFA94D; --safe:#38C2B8; --road:#4DABF7; --risk:#FF6B6B; --caught:#C77DDB; --alert:#9775FA; --slate:#8A9AA3; } }
+:root[data-theme="dark"]{
+  --page:#0D1720; --panel:#14222D; --ink:#E3EAEE; --muted:#93A4AE; --line:#27394A; --soft:#101C26;
+  --fire:#FF7A45; --ember:#FFA94D; --safe:#38C2B8; --road:#4DABF7; --risk:#FF6B6B; --caught:#C77DDB; --alert:#9775FA; --slate:#8A9AA3; }
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.55 var(--body)}
+.wrap{max-width:1320px;margin:0 auto;padding:20px 20px 40px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 32px;margin-bottom:16px}
+h1{font:600 clamp(28px,4vw,40px)/1 var(--display);margin:0;letter-spacing:.2px}
+.lede{margin:6px 0 0;color:var(--muted);max-width:68ch}
+.clock{font:600 clamp(36px,5vw,56px)/1 var(--display);font-variant-numeric:tabular-nums;text-align:right}
+.clock small{display:block;font:400 13px/1.3 var(--body);color:var(--muted)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+@media (max-width:980px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.mapbox{padding:10px}
+.mapwrap{position:relative;width:100%;aspect-ratio:8/5;border-radius:6px;overflow:hidden;background:#9CC3D5}
+canvas#map{width:100%;height:100%;display:block;cursor:crosshair}
+.hint{position:absolute;left:10px;top:10px;background:rgba(20,30,38,.78);color:#fff;font-size:13px;padding:6px 10px;border-radius:6px;pointer-events:none;max-width:70%}
+.status{font-size:13px;color:var(--muted);min-height:20px;margin:8px 2px 0}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted);margin:8px 2px 0}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block}
+.tallies{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--line);border-top:1px solid var(--line);margin:10px -10px -10px;border-radius:0 0 10px 10px;overflow:hidden}
+@media (max-width:640px){.tallies{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tally{background:var(--panel);padding:10px 12px}
+.tally b{display:block;font:600 30px/1 var(--display);font-variant-numeric:tabular-nums}
+.tally span{font-size:12.5px;color:var(--muted)}
+.chartbox{padding:12px 14px;margin-top:16px}
+.chartbox h2,.rail h2,.cmp h2{font:600 20px/1.2 var(--display);margin:0 0 8px}
+canvas#chart{width:100%;height:150px;display:block}
+.rail{padding:4px 16px 16px}
+.rail section{padding:12px 0;border-bottom:1px solid var(--line)}
+.rail section:last-child{border-bottom:0}
+label.row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px;margin:8px 0 2px}
+label.row output{font-variant-numeric:tabular-nums;color:var(--muted)}
+input[type=range]{width:100%;accent-color:var(--fire)}
+select{width:100%;font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--soft);color:var(--ink)}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:4px}
+.seg button{border:0;border-right:1px solid var(--line);background:var(--soft);color:var(--ink);font:inherit;font-size:13.5px;padding:7px 6px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;margin-top:10px}
+.check input{accent-color:var(--fire);width:16px;height:16px}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{font:500 14px/1 var(--body);padding:10px 14px;border-radius:6px;border:1px solid var(--line);background:var(--soft);color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--fire);border-color:var(--fire);color:#fff}
+.btn:disabled{opacity:.5;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--road);outline-offset:2px}
+.note{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+.alerts{list-style:none;margin:6px 0 0;padding:0;font-size:13.5px}
+.alerts li{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--line)}
+.alerts li:last-child{border-bottom:0}
+.cmp{padding:14px;margin-top:16px}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:720px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:500;color:var(--muted);font-size:13px}
+td.n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}th.n{text-align:right}
+.empty{color:var(--muted);font-size:14px;padding:10px 0}
+.results{padding:16px;margin-top:16px}
+.results h2,.study h2{font:600 24px/1.15 var(--display);margin:0 0 4px}
+.results .sub,.study .sub{color:var(--muted);font-size:14px;margin:0 0 14px;max-width:80ch}
+.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+@media (max-width:760px){.metrics{grid-template-columns:1fr}}
+.metric{background:var(--panel);padding:14px 16px}
+.metric .v{font:600 38px/1 var(--display);font-variant-numeric:tabular-nums}
+.metric .l{font-weight:500;font-size:14px;margin-top:6px}
+.metric .d{font-size:13px;color:var(--muted);margin-top:2px}
+.twocol{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px;margin-top:18px}
+@media (max-width:860px){.twocol{grid-template-columns:1fr}}
+.twocol h3,.study h3{font:600 18px/1.2 var(--display);margin:0 0 6px}
+table.small{min-width:0;font-size:13.5px}
+.bar{height:8px;background:var(--caught);border-radius:2px;opacity:.75}
+.study{padding:16px;margin-top:16px}
+.studygrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;margin-top:18px}
+@media (max-width:980px){.studygrid{grid-template-columns:1fr}}
+canvas#lagChart{width:100%;height:220px;display:block}
+.findings{margin-top:22px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 28px}
+@media (max-width:860px){.findings{grid-template-columns:1fr}}
+.finding h3{margin-bottom:4px}
+.finding p{margin:0;font-size:14.5px;max-width:68ch}
+.caveat{margin-top:20px;padding:12px 14px;border-left:3px solid var(--ember);background:var(--soft);font-size:14px;border-radius:0}
+tr.hl td{background:var(--soft)}
+.about{margin-top:16px;padding:14px 16px;font-size:14px;color:var(--muted)}
+.about p{margin:0 0 8px;max-width:95ch}
+.about p:last-child{margin:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Foothill fire egress simulator</h1>
+      <p class="lede">A fictional Santa Barbara–style coastal community with synthetic data. Click the ridge to start a fire, decide how alerts go out, and watch which households get out in time.</p>
+    </div>
+    <div class="clock" aria-live="off"><span id="clock">T+0:00</span><small>time since ignition</small></div>
+  </header>
+
+  <div class="grid">
+    <div>
+      <div class="panel mapbox">
+        <div class="mapwrap">
+          <canvas id="map" width="800" height="500" aria-label="Simulation map. Click in the hills to set an ignition point."></canvas>
+          <div class="hint" id="hint">Click anywhere in the hills to set the ignition, then press Start.</div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div class="status" id="status">Hover over the map to inspect a location.</div>
+        <div class="tallies">
+          <div class="tally"><b id="k-safe" style="color:var(--safe)">0</b><span>reached safety</span></div>
+          <div class="tally"><b id="k-road" style="color:var(--road)">0</b><span>on the road</span></div>
+          <div class="tally"><b id="k-prep" style="color:var(--ember)">0</b><span>warned, getting ready</span></div>
+          <div class="tally"><b id="k-risk" style="color:var(--risk)">0</b><span>fire reached home first</span></div>
+          <div class="tally"><b id="k-trap" style="color:var(--caught)">0</b><span>caught on a burning road</span></div>
+        </div>
+      </div>
+
+      <div class="panel chartbox">
+        <h2>How the evacuation unfolds</h2>
+        <canvas id="chart" height="150"></canvas>
+      </div>
+    </div>
+
+    <aside class="panel rail">
+      <section>
+        <h2>Run</h2>
+        <div class="btns">
+          <button class="btn primary" id="play">Start</button>
+          <button class="btn" id="finish">Skip to end</button>
+          <button class="btn" id="reset">Reset</button>
+        </div>
+        <label class="row" for="speed">Playback speed <output id="speedOut">Normal</output></label>
+        <input type="range" id="speed" min="0" max="3" step="1" value="1">
+      </section>
+
+      <section>
+        <h2>Fire weather</h2>
+        <label class="row" for="wind">Wind pattern</label>
+        <select id="wind">
+          <option value="0">Sundowner, down-canyon from the north</option>
+          <option value="45">Santa Ana, from the northeast</option>
+          <option value="225">Onshore breeze, from the southwest</option>
+        </select>
+        <label class="row" for="ws">Wind speed <output id="wsOut">50 km/h</output></label>
+        <input type="range" id="ws" min="10" max="80" step="5" value="50">
+        <label class="row">Time of day</label>
+        <div class="seg" role="group" aria-label="Time of day">
+          <button id="day" aria-pressed="true">Afternoon</button><button id="night" aria-pressed="false">2 a.m.</button>
+        </div>
+        <div class="btns" style="margin-top:10px"><button class="btn" id="randIgn">Random ignition</button></div>
+      </section>
+
+      <section>
+        <h2>Alerting</h2>
+        <label class="row" for="det">Fire reported after <output id="detOut">8 min</output></label>
+        <input type="range" id="det" min="0" max="30" step="1" value="8">
+        <label class="row">Who gets the evacuation order</label>
+        <div class="seg" role="group" aria-label="Alert policy">
+          <button id="polTrig" aria-pressed="true">Zones near the fire</button><button id="polAll" aria-pressed="false">Everyone at once</button>
+        </div>
+        <label class="row" for="trig">Order a zone when fire is within <output id="trigOut">1.5 km</output></label>
+        <input type="range" id="trig" min="0.5" max="4" step="0.25" value="1.5">
+        <label class="row" for="lag">Time to issue each order <output id="lagOut">10 min</output></label>
+        <input type="range" id="lag" min="0" max="30" step="1" value="10">
+        <ul class="alerts" id="alerts"></ul>
+      </section>
+
+      <section>
+        <h2>People and roads</h2>
+        <label class="row">How households decide to leave</label>
+        <div class="seg" role="group" aria-label="Behavior model">
+          <button id="mRules" aria-pressed="true">Wait for the order</button><button id="mAdapt" aria-pressed="false">Read the neighborhood</button>
+        </div>
+        <p class="note" id="modeNote">Households leave when they get the official order or see flames nearby, and take the fastest open route.</p>
+        <label class="check"><input type="checkbox" id="cf"> Contraflow on the canyon arterials</label>
+      </section>
+
+      <section>
+        <h2>Map layer</h2>
+        <select id="layer">
+          <option value="none">Households and fire</option>
+          <option value="smoke">Smoke</option>
+          <option value="cong">Traffic congestion</option>
+          <option value="info">Word of mouth (neighbors leaving)</option>
+          <option value="risk">Parcel egress risk (after mapping)</option>
+        </select>
+        <div class="btns" style="margin-top:10px"><button class="btn" id="ens">Map parcel egress risk</button></div>
+        <p class="note" id="ensNote">Runs 12 fires from random ignitions under the current settings and scores each home by how often it didn't get out.</p>
+      </section>
+    </aside>
+  </div>
+
+  <section class="panel results" aria-live="polite">
+    <h2>Results for this run</h2>
+    <p class="sub" id="resSub">Start a fire to see results. They update live and settle when the run finishes.</p>
+    <div class="metrics">
+      <div class="metric"><div class="v" id="m-fail" style="color:var(--risk)">–</div><div class="l">Households that didn't get out</div><div class="d" id="m-fail-d">Fire reached home first, or caught on a burning road</div></div>
+      <div class="metric"><div class="v" id="m-order">–</div><div class="l">Ignition to first evacuation order</div><div class="d" id="m-order-d">Detection time plus time to issue</div></div>
+      <div class="metric"><div class="v" id="m-t95" style="color:var(--safe)">–</div><div class="l">95% of evacuees safe by</div><div class="d">Clearance time since ignition</div></div>
+      <div class="metric"><div class="v" id="m-peak" style="color:var(--road)">–</div><div class="l">Peak vehicles on the road</div><div class="d" id="m-peak-d">Household vehicles at the busiest moment</div></div>
+      <div class="metric"><div class="v" id="m-shadow" style="color:var(--alert)">–</div><div class="l">Shadow evacuation</div><div class="d">Households that left before their zone was ordered</div></div>
+      <div class="metric"><div class="v" id="m-parcel">–</div><div class="l">Parcel egress risk</div><div class="d" id="m-parcel-d">Map parcel egress risk to score every home across 12 fires</div></div>
+    </div>
+    <div class="twocol">
+      <div>
+        <h3>Zones ranked by risk</h3>
+        <div class="tablewrap"><table class="small"><thead><tr><th>Zone</th><th class="n">Homes</th><th class="n">Fire reached</th><th class="n">Didn't get out</th><th class="n">Ordered at</th></tr></thead><tbody id="zoneBody"></tbody></table></div>
+        <p class="note">Didn't get out counts a zone's households wherever they were caught, including on roads outside the zone.</p>
+      </div>
+      <div>
+        <h3>Worst bottlenecks</h3>
+        <div class="tablewrap"><table class="small"><thead><tr><th>Road</th><th class="n">Vehicle-minutes stuck in queues</th><th style="width:30%"></th></tr></thead><tbody id="bnBody"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="panel cmp">
+    <h2>Compare runs</h2>
+    <p class="note" style="margin:0 0 8px">Each finished run is added here. Change one setting at a time to see what it buys you.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Run</th><th>Conditions</th><th>Alerting</th><th>Behavior and roads</th><th class="n">Didn't get out</th><th class="n">Share of homes fire reached</th><th class="n">First order</th><th class="n">95% out by</th><th class="n">Peak on road</th><th class="n">Shadow evacuation</th></tr></thead>
+        <tbody id="cmpBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="cmpEmpty">No runs yet. Start a fire to add the first one.</div>
+    <div class="btns" style="margin-top:8px"><button class="btn" id="clearCmp">Clear table</button></div>
+  </div>
+
+  <section class="panel study">
+    <h2>What the scenarios show</h2>
+    <p class="sub" id="studySub"></p>
+    <div class="studygrid">
+      <div>
+        <h3>Scenario comparison</h3>
+        <div class="tablewrap"><table class="small"><thead><tr><th>Scenario (one change from baseline)</th><th class="n">Didn't get out</th><th class="n">Caught on road</th><th class="n">First order</th><th class="n">95% out by</th><th class="n">Peak on road</th></tr></thead><tbody id="studyBody"></tbody></table></div>
+      </div>
+      <div>
+        <h3>Every minute of delay costs lives</h3>
+        <canvas id="lagChart" height="220" aria-label="Line chart of households that didn't get out versus minutes to issue each order"></canvas>
+        <p class="note">Households that didn't get out per fire, by time to issue each order. Afternoon, zones within 1.5 km, fire reported at 8 minutes.</p>
+      </div>
+    </div>
+    <div class="findings" id="findings"></div>
+    <div class="caveat" id="caveat"></div>
+    <div class="btns" style="margin-top:14px"><button class="btn" id="rerun">Re-run the study with 24 new fires</button></div>
+    <p class="note" id="rerunNote">Takes about a minute. The map pauses while it runs.</p>
+  </section>
+
+  <div class="panel about">
+    <p>Under the hood: a stochastic cellular fire-spread model driven by fuel, slope and wind with ember spotting; about 1,570 synthetic households as agents; and a queue-based road network in the style of MATSim, with limited storage and spillback. Roads close when fire crosses them. Smoke, congestion and word of mouth live in shared fields on a coarse grid that agents read and write.</p>
+    <p>Everything here is synthetic and uncalibrated. Geography, household locations, fire behavior and response rates are illustrative, not a model of any real place or event.</p>
+  </div>
+</div>
+
+<script>
+const Sim = (function () {
+  let W = 160, H = 100; const CELL = 50, DT = 10, BS = 4; let BW = W / BS, BH = H / BS;
+  function setDims(w, h) { W = w; H = h; BW = w / BS; BH = h / BS; }
+  const LU = { OCEAN: 0, BEACH: 1, URBAN: 2, WUI: 3, CHAP: 4 };
+  const ST = { UNAWARE: 0, PREPARING: 1, WAITING: 2, ONROAD: 3, SAFE: 4, ATRISK: 5, TRAPPED: 6 };
+  const DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function coastY(x) { return 90 + 3 * Math.sin(x / 17) + 1.5 * Math.sin(x / 7 + 1); }
+  function wuiTop(x) { return 44 + 4 * Math.sin(x / 9) + 2 * Math.sin(x / 4.3); }
+  function urbanTop(x) { return 68 + 2 * Math.sin(x / 13); }
+
+  const ART = [22, 52, 86, 116, 146];
+  const CON = [8, 37, 68, 101, 131, 156];
+  const SPUR = [35, 70, 100, 132];
+
+  const LINES = {
+    hwy: { f: x => coastY(x) - 5, segs: [[0, 159]], spec: { lanes: 2, speed: 27, type: 'hwy', name: 'Coast Highway' } },
+    u1: { f: x => 78 + Math.sin(x / 10), segs: [[3, 157]], spec: { lanes: 1, speed: 13, type: 'urban', name: 'Harbor Avenue' } },
+    u2: { f: x => 71.5 + Math.sin(x / 12), segs: [[3, 157]], spec: { lanes: 1, speed: 13, type: 'urban', name: 'Grove Street' } },
+    f1: { f: x => 63 + 2 * Math.sin(x / 11), segs: [[10, 152]], spec: { lanes: 1, speed: 11, type: 'local', name: 'Foothill Road' } },
+    f2: { f: x => 55 + 2 * Math.sin(x / 9), segs: [[12, 44], [48, 104], [110, 152]], spec: { lanes: 1, speed: 11, type: 'local', name: 'Upper Ridge Road' } },
+  };
+  const VERT = [
+    ...ART.map((x, i) => ({ x, top: 46, lines: ['f2', 'f1', 'u2', 'u1', 'hwy'], spec: { lanes: 1, speed: 15, type: 'art', name: ['Toyon', 'Manzanita', 'Ceanothus', 'Sage', 'Buckwheat'][i] + ' Canyon Road' } })),
+    ...CON.map((x, i) => ({ x, top: null, lines: ['u2', 'u1', 'hwy'], spec: { lanes: 1, speed: 13, type: 'urban', name: ['Anchor', 'Kelp', 'Pier', 'Dune', 'Tide', 'Surf'][i] + ' Street' } })),
+    ...SPUR.map((x, i) => ({ x, top: 42, lines: ['f2'], spec: { lanes: 1, speed: 9, type: 'local', name: ['Hollyleaf', 'Coffeeberry', 'Scrub Oak', 'Chamise'][i] + ' Lane (dead end)' } })),
+  ];
+  const SYNTH_ZONES = [
+    { id: 'F1', x0: 0, x1: 37, foot: true }, { id: 'F2', x0: 37, x1: 70, foot: true }, { id: 'F3', x0: 70, x1: 101, foot: true },
+    { id: 'F4', x0: 101, x1: 131, foot: true }, { id: 'F5', x0: 131, x1: 160, foot: true },
+    { id: 'U1', x0: 0, x1: 53, foot: false }, { id: 'U2', x0: 53, x1: 106, foot: false }, { id: 'U3', x0: 106, x1: 160, foot: false },
+  ];
+  const FIRE = { pBase: 0.012, spot: 0.0003, spotDist: 0.5, wexp: 1.6, urban: 0.12 };
+  let ZONES = SYNTH_ZONES;
+  function setZones(z) { ZONES = z; }
+  const CAP = { hwy: 3, art: 1.9, urban: 2.0, local: 1.5 }; // household-vehicle units per lane per tick (~1.7 veh/household, smoke-degraded flow)
+
+  function inSeg(line, x) { return LINES[line].segs.some(s => x >= s[0] && x <= s[1]); }
+
+  function buildWorld() {
+    setDims(160, 100); ZONES = SYNTH_ZONES;
+    const N = W * H;
+    const elev = new Float32Array(N), lu = new Uint8Array(N), fuel = new Float32Array(N), road = new Uint8Array(N);
+    const rng = mulberry32(7);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = y * W + x, cy = coastY(x), d = cy - y;
+      let e = d > 0 ? d * 5 + Math.max(0, 50 - y) * 14 : 0;
+      e += (Math.sin(x / 6.5) * 0.5 + Math.sin(x / 3.1 + y / 5) * 0.3) * Math.max(0, 70 - y) * 1.2;
+      let canyon = 0;
+      for (const ax of ART.concat(SPUR)) canyon = Math.max(canyon, Math.exp(-(((x - ax) / 2.5) ** 2)));
+      e -= canyon * Math.max(0, 62 - y) * 1.5;
+      elev[c] = Math.max(0, e);
+      if (y > cy) { lu[c] = LU.OCEAN; fuel[c] = 0; }
+      else if (y > cy - 1.5) { lu[c] = LU.BEACH; fuel[c] = 0.03; }
+      else if (y >= urbanTop(x)) { lu[c] = LU.URBAN; fuel[c] = FIRE.urban + 0.06 * rng(); }
+      else if (y >= wuiTop(x)) { lu[c] = LU.WUI; fuel[c] = 0.55 + 0.4 * canyon + 0.1 * rng(); }
+      else { lu[c] = LU.CHAP; fuel[c] = 0.85 + 0.15 * rng(); }
+    }
+
+    const nodes = [], edges = [];
+    function node(x, y) {
+      for (let i = 0; i < nodes.length; i++) { const n = nodes[i]; if (Math.abs(n.x - x) < 0.6 && Math.abs(n.y - y) < 0.6) return i; }
+      nodes.push({ id: nodes.length, x, y, out: [], inn: [], exit: false, local: false });
+      return nodes.length - 1;
+    }
+    function addEdge(a, b, spec) {
+      const A = nodes[a], B = nodes[b], dx = B.x - A.x, dy = B.y - A.y, dist = Math.hypot(dx, dy);
+      const cells = [], n = Math.max(1, Math.ceil(dist * 2));
+      for (let i = 0; i <= n; i++) {
+        const cx = Math.round(A.x + dx * i / n), cy = Math.round(A.y + dy * i / n);
+        if (cx >= 0 && cx < W && cy >= 0 && cy < H) { const c = cy * W + cx; if (!cells.includes(c)) cells.push(c); }
+      }
+      const e = { id: edges.length, from: a, to: b, len: dist * CELL, lanes: spec.lanes, speed: spec.speed, type: spec.type, name: spec.name, cells,
+        mx: (A.x + B.x) / 2, my: (A.y + B.y) / 2 };
+      edges.push(e); A.out.push(e.id); B.inn.push(e.id);
+      if (spec.type !== 'hwy') { A.local = true; B.local = true; }
+    }
+    function link(a, b, spec, pathFn) {
+      const A = nodes[a], B = nodes[b];
+      const n = Math.max(1, Math.round(Math.hypot(B.x - A.x, B.y - A.y) / 5));
+      let prev = a;
+      for (let i = 1; i <= n; i++) {
+        const id = i === n ? b : node(...pathFn(i / n));
+        addEdge(prev, id, spec); addEdge(id, prev, spec); prev = id;
+      }
+    }
+    for (const [name, L] of Object.entries(LINES)) {
+      for (const [s0, s1] of L.segs) {
+        const xs = [s0, s1];
+        for (const v of VERT) if (v.lines.includes(name) && v.x > s0 && v.x < s1) xs.push(v.x);
+        xs.sort((a, b) => a - b);
+        for (let i = 0; i < xs.length - 1; i++) {
+          const xa = xs[i], xb = xs[i + 1];
+          link(node(xa, L.f(xa)), node(xb, L.f(xb)), L.spec, t => { const x = xa + (xb - xa) * t; return [x, L.f(x)]; });
+        }
+      }
+    }
+    for (const v of VERT) {
+      const pts = [];
+      if (v.top !== null) pts.push(v.top);
+      for (const ln of v.lines) if (inSeg(ln, v.x)) pts.push(LINES[ln].f(v.x));
+      pts.sort((a, b) => a - b);
+      for (let i = 0; i < pts.length - 1; i++) {
+        const ya = pts[i], yb = pts[i + 1];
+        link(node(v.x, ya), node(v.x, yb), v.spec, t => [v.x, ya + (yb - ya) * t]);
+      }
+    }
+    nodes[node(0, LINES.hwy.f(0))].exit = true;
+    nodes[node(159, LINES.hwy.f(159))].exit = true;
+
+    const cellEdges = {};
+    for (const e of edges) {
+      e.tt = Math.max(1, Math.round(e.len / e.speed / DT));
+      for (const c of e.cells) { road[c] = 1; (cellEdges[c] = cellEdges[c] || []).push(e.id); }
+    }
+    for (let c = 0; c < N; c++) if (road[c]) fuel[c] *= 0.35;
+
+    // distance to road (grid BFS)
+    const rd = new Int16Array(N).fill(999), q = [];
+    for (let c = 0; c < N; c++) if (road[c]) { rd[c] = 0; q.push(c); }
+    for (let h = 0; h < q.length; h++) {
+      const c = q[h], x = c % W, y = (c / W) | 0;
+      for (let k = 0; k < 4; k++) {
+        const nx = x + DIRS[k][0], ny = y + DIRS[k][1];
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const n = ny * W + nx; if (rd[n] > rd[c] + 1) { rd[n] = rd[c] + 1; q.push(n); }
+      }
+    }
+
+    const localNodes = nodes.filter(n => n.local && !n.exit);
+    const homes = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = y * W + x;
+      if (road[c] || rd[c] > 3) continue;
+      const dens = lu[c] === LU.URBAN ? 0.30 : lu[c] === LU.WUI ? 0.36 : 0;
+      if (rng() >= dens) continue;
+      let best = -1, bd = 1e9;
+      for (const n of localNodes) { const d = (n.x - x) ** 2 + (n.y - y) ** 2; if (d < bd) { bd = d; best = n.id; } }
+      const foot = lu[c] === LU.WUI;
+      const zone = ZONES.findIndex(z => z.foot === foot && x >= z.x0 && x < z.x1);
+      const spur = nodes[best].inn.some(eid => /dead end/.test(edges[eid].name));
+      homes.push({ id: homes.length, x, y, c, node: best, zone, spur, b: (y >> 2) * BW + (x >> 2) });
+    }
+    const cellHomes = {};
+    for (const h of homes) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const x = h.x + dx, y = h.y + dy; if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const c = y * W + x; (cellHomes[c] = cellHomes[c] || []).push(h.id);
+    }
+    const zoneBlocks = ZONES.map(() => new Set());
+    for (const h of homes) zoneBlocks[h.zone].add(h.b);
+
+    // slope factor per cell per direction
+    const sf = new Float32Array(N * 8);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = y * W + x;
+      for (let k = 0; k < 8; k++) {
+        const nx = x + DIRS[k][0], ny = y + DIRS[k][1];
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const dist = k < 4 ? CELL : CELL * Math.SQRT2;
+        const s = (elev[ny * W + nx] - elev[c]) / dist;
+        sf[c * 8 + k] = Math.exp(Math.max(-1.5, Math.min(1.5, 3 * s)));
+      }
+    }
+    return { FIRE, W, H, CELL, BS, BW, BH, elev, lu, fuel, road, nodes, edges, homes, cellHomes, cellEdges, zoneBlocks, sf };
+  }
+
+  const DEFAULTS = { ign: { x: 80, y: 28 }, windFrom: 0, windKmh: 50, night: false, detectMin: 8, trigKm: 1.5, lagMin: 10,
+    alertAll: false, mode: 'rules', contraflow: false, seed: 1, maxMin: 240 };
+
+  function newRun(world, params) {
+    const p = Object.assign({}, DEFAULTS, params);
+    const Wd = world, N = W * H, rng = mulberry32(p.seed * 9973 + 13);
+    const ws = p.windKmh / 3.6, th = p.windFrom * Math.PI / 180;
+    const wx = -Math.sin(th), wy = Math.cos(th);
+    const wf = new Float32Array(8);
+    for (let k = 0; k < 8; k++) {
+      const dx = DIRS[k][0], dy = DIRS[k][1], l = Math.hypot(dx, dy);
+      wf[k] = Math.exp(FIRE.wexp * (ws / 10) * (dx * wx + dy * wy) / l) * (k < 4 ? 1 : 0.72);
+    }
+    const nh = Wd.homes.length;
+    const R = {
+      p, t: 0, done: false, world: Wd, wx, wy, ws, wf, rng,
+      fire: new Uint8Array(N), burnLeft: new Uint16Array(N), arrival: new Int32Array(N).fill(-1), burning: [],
+      eq: Wd.edges.map(() => []), active: new Set(), eburn: new Uint16Array(Wd.edges.length), ebud: new Float32Array(Wd.edges.length),
+      ecap: new Float32Array(Wd.edges.length), estore: new Float32Array(Wd.edges.length),
+      st: new Uint8Array(nh), departAt: new Int32Array(nh).fill(-1), departT: new Int32Array(nh).fill(-1),
+      safeT: new Int32Array(nh).fill(-1), fireNear: new Int32Array(nh).fill(-1), exitT: new Int32Array(nh),
+      getsAlert: new Uint8Array(nh), awareBy: new Uint8Array(nh),
+      nodeWait: Wd.nodes.map(() => []), waitNodes: new Set(),
+      blockFire: new Uint8Array(BW * BH), fireDist: new Int16Array(BW * BH).fill(999), blockDirty: true,
+      smoke: new Float32Array(BW * BH), info: new Float32Array(BW * BH), burnCount: new Float32Array(BW * BH),
+      zoneTrig: new Int32Array(ZONES.length).fill(-1), zoneAlert: new Int32Array(ZONES.length).fill(-1),
+      nextRules: new Int32Array(Wd.nodes.length).fill(-1), nextAdapt: new Int32Array(Wd.nodes.length).fill(-1),
+      closedDirty: true, series: [], alertLog: [], edelay: new Float32Array(Wd.edges.length), peak: 0,
+    };
+    for (const e of Wd.edges) {
+      let lanes = e.lanes;
+      if (p.contraflow) {
+        if (Wd.distExit) { if ((e.type === 'art' || e.type === 'hwy') && Wd.distExit[e.to] < Wd.distExit[e.from]) lanes = Math.min(4, e.lanes * 2); }
+        else if (e.type === 'art' && Wd.nodes[e.to].y > Wd.nodes[e.from].y) lanes = 2;
+      }
+      const wgt = Wd.agentWeight || 1;
+      R.ecap[e.id] = CAP[e.type] * lanes / wgt;
+      R.estore[e.id] = Math.max(wgt > 1 ? 1.5 : 2, lanes * e.len / 12.75 / wgt);
+    }
+    const reach = p.night ? 0.65 : 0.88;
+    for (let h = 0; h < nh; h++) R.getsAlert[h] = rng() < reach ? 1 : 0;
+    ignite(R, p.ign.y * W + p.ign.x);
+    for (const [dx, dy] of DIRS.slice(0, 4)) {
+      const x = p.ign.x + dx, y = p.ign.y + dy;
+      if (x >= 0 && y >= 0 && x < W && y < H) ignite(R, y * W + x);
+    }
+    recomputeTrees(R, true);
+    return R;
+  }
+
+  function burnDur(lu) { return lu === LU.CHAP ? 24 : lu === LU.WUI ? 40 : lu === LU.URBAN ? 90 : 6; }
+
+  function ignite(R, c) {
+    const Wd = R.world;
+    if (R.fire[c] !== 0 || Wd.fuel[c] <= 0) return;
+    R.fire[c] = 1; R.burnLeft[c] = burnDur(Wd.lu[c]); R.arrival[c] = R.t; R.burning.push(c);
+    const x = c % W, y = (c / W) | 0, b = (y >> 2) * BW + (x >> 2);
+    if (!R.blockFire[b]) { R.blockFire[b] = 1; R.blockDirty = true; }
+    const es = Wd.cellEdges[c];
+    if (es) for (const eid of es) {
+      if (R.eburn[eid]++ === 0) {
+        R.closedDirty = true;
+        for (const a of R.eq[eid]) R.st[a] = ST.TRAPPED;
+        R.eq[eid] = [];
+      }
+    }
+    const hs = Wd.cellHomes[c];
+    if (hs) for (const h of hs) {
+      if (R.fireNear[h] < 0) R.fireNear[h] = R.t;
+      const s = R.st[h];
+      if (s === ST.UNAWARE || s === ST.PREPARING || s === ST.WAITING) R.st[h] = ST.ATRISK;
+    }
+  }
+
+  function stepFire(R) {
+    const Wd = R.world, rng = R.rng, fuel = Wd.fuel, sf = Wd.sf, wf = R.wf, fire = R.fire;
+    const pBase = FIRE.pBase, spotBase = FIRE.spot * (R.ws / 10) ** 2;
+    const newIgn = [], still = [];
+    R.burnCount.fill(0);
+    for (const c of R.burning) {
+      const x = c % W, y = (c / W) | 0;
+      R.burnCount[(y >> 2) * BW + (x >> 2)] += 1;
+      for (let k = 0; k < 8; k++) {
+        const nx = x + DIRS[k][0], ny = y + DIRS[k][1];
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const n = ny * W + nx;
+        if (fire[n] !== 0 || fuel[n] <= 0) continue;
+        if (rng() < pBase * fuel[n] * sf[c * 8 + k] * wf[k]) newIgn.push(n);
+      }
+      if (rng() < spotBase * fuel[c]) {
+        const ang = Math.atan2(R.wy, R.wx) + (rng() - 0.5) * 0.6, d = 3 + rng() * R.ws * FIRE.spotDist;
+        const sx = Math.round(x + Math.cos(ang) * d), sy = Math.round(y + Math.sin(ang) * d);
+        if (sx >= 0 && sy >= 0 && sx < W && sy < H) { const s = sy * W + sx; if (rng() < fuel[s] * 0.6) newIgn.push(s); }
+      }
+      if (--R.burnLeft[c] === 0) {
+        fire[c] = 2;
+        const es = Wd.cellEdges[c];
+        if (es) for (const eid of es) if (--R.eburn[eid] === 0) R.closedDirty = true;
+      } else still.push(c);
+    }
+    R.burning = still;
+    for (const n of newIgn) ignite(R, n);
+  }
+
+  function updateFireDist(R) {
+    const fd = R.fireDist; fd.fill(999); const q = [];
+    for (let b = 0; b < BW * BH; b++) if (R.blockFire[b]) { fd[b] = 0; q.push(b); }
+    for (let h = 0; h < q.length; h++) {
+      const b = q[h], x = b % BW, y = (b / BW) | 0;
+      for (let k = 0; k < 8; k++) {
+        const nx = x + DIRS[k][0], ny = y + DIRS[k][1];
+        if (nx < 0 || ny < 0 || nx >= BW || ny >= BH) continue;
+        const n = ny * BW + nx; if (fd[n] > fd[b] + 1) { fd[n] = fd[b] + 1; q.push(n); }
+      }
+    }
+    R.blockDirty = false;
+  }
+
+  function dijkstra(R, costFn, next) {
+    const Wd = R.world, nn = Wd.nodes.length, dist = new Float64Array(nn).fill(Infinity);
+    next.fill(-1);
+    const heap = [];
+    const push = (d, n) => { heap.push([d, n]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    for (const n of Wd.nodes) if (n.exit) { dist[n.id] = 0; push(0, n.id); }
+    while (heap.length) {
+      const [d, v] = pop(); if (d > dist[v]) continue;
+      for (const eid of Wd.nodes[v].inn) {
+        if (R.eburn[eid] > 0) continue;
+        const u = Wd.edges[eid].from, nd = d + costFn(eid);
+        if (nd < dist[u]) { dist[u] = nd; next[u] = eid; push(nd, u); }
+      }
+    }
+  }
+
+  function recomputeTrees(R, force) {
+    const Wd = R.world;
+    if (R.p.mode !== 'adaptive') { if (R.closedDirty || force) dijkstra(R, eid => Wd.edges[eid].tt * DT, R.nextRules); }
+    else dijkstra(R, eid => {
+      const e = Wd.edges[eid];
+      const bx = Math.floor(e.mx) >> 2, by = Math.floor(e.my) >> 2;
+      const fd = (bx >= 0 && by >= 0 && bx < BW && by < BH) ? R.fireDist[by * BW + bx] : 999;
+      return e.tt * DT + (R.eq[eid].length / R.ecap[eid]) * DT + (fd <= 1 ? 900 : fd === 2 ? 300 : 0);
+    }, R.nextAdapt);
+    R.closedDirty = false;
+  }
+
+  function sampleDelay(R, night) {
+    const med = night ? 20 : 14;
+    const z = Math.sqrt(-2 * Math.log(R.rng() + 1e-9)) * Math.cos(2 * Math.PI * R.rng());
+    return Math.round(Math.max(2, med * Math.exp(0.5 * z)) * 60 / DT);
+  }
+
+  function makeAware(R, h, fast, by) {
+    if (R.st[h] !== ST.UNAWARE) return;
+    R.st[h] = ST.PREPARING; R.awareBy[h] = by;
+    let d = sampleDelay(R, R.p.night);
+    if (fast) d = Math.min(d, Math.round((2 + R.rng() * 3) * 60 / DT));
+    R.departAt[h] = R.t + d;
+  }
+
+  function step(R) {
+    if (R.done) return;
+    const Wd = R.world, p = R.p, t = ++R.t;
+    stepFire(R);
+    if (t % 6 === 0 || R.blockDirty) { if (R.blockDirty) updateFireDist(R); }
+
+    // alerts
+    const detT = Math.round(p.detectMin * 60 / DT);
+    if (t >= detT && t % 3 === 0) {
+      for (let z = 0; z < ZONES.length; z++) {
+        if (R.zoneTrig[z] < 0) {
+          let trig = p.alertAll;
+          if (!trig) {
+            let md = 999; for (const b of Wd.zoneBlocks[z]) md = Math.min(md, R.fireDist[b]);
+            trig = md * BS * CELL <= p.trigKm * 1000;
+          }
+          if (trig) { R.zoneTrig[z] = t; R.zoneAlert[z] = t + Math.round(p.lagMin * 60 / DT); }
+        }
+        if (R.zoneAlert[z] >= 0 && t === R.zoneAlert[z]) {
+          R.alertLog.push({ zone: ZONES[z].id, t });
+          for (const h of Wd.homes) if (h.zone === z && R.getsAlert[h.id]) makeAware(R, h.id, false, 1);
+        }
+      }
+    }
+
+    // cue-based awareness
+    const adaptive = p.mode === 'adaptive', nightF = p.night ? 0.5 : 1;
+    for (const h of Wd.homes) {
+      if (R.st[h.id] !== ST.UNAWARE) continue;
+      const fd = R.fireDist[h.b];
+      if (fd <= 1 && R.rng() < 0.2 * nightF) { makeAware(R, h.id, true, 2); continue; }
+      if (adaptive) {
+        const rate = 0.35 * R.info[h.b] + 0.04 * Math.min(R.smoke[h.b], 20) + (fd <= 3 ? 0.15 : 0);
+        if (rate > 0 && R.rng() < (1 - Math.exp(-rate * DT / 60)) * nightF) makeAware(R, h.id, fd <= 3, 3);
+      }
+    }
+
+    // departures
+    for (const h of Wd.homes) {
+      if (R.st[h.id] === ST.PREPARING && t >= R.departAt[h.id]) {
+        R.st[h.id] = ST.WAITING; R.departT[h.id] = t;
+        R.nodeWait[h.node].push(h.id); R.waitNodes.add(h.node);
+        R.info[h.b] += 1;
+      }
+    }
+
+    if ((adaptive && t % 6 === 0) || R.closedDirty) recomputeTrees(R);
+    const next = adaptive ? R.nextAdapt : R.nextRules;
+
+    // node entries
+    for (const n of Array.from(R.waitNodes)) {
+      const wq = R.nodeWait[n];
+      let entries = 0;
+      while (wq.length && entries < 2) {
+        const a = wq[0];
+        if (R.st[a] !== ST.WAITING) { wq.shift(); continue; }
+        const ne = next[n]; if (ne < 0) break;
+        if (R.eburn[ne] > 0 || R.eq[ne].length >= R.estore[ne]) break;
+        wq.shift(); R.eq[ne].push(a); R.active.add(ne); R.exitT[a] = t + Wd.edges[ne].tt; R.st[a] = ST.ONROAD; entries++;
+      }
+      if (!wq.length) R.waitNodes.delete(n);
+    }
+
+    // link queues
+    for (const eid of Array.from(R.active)) {
+      const e = Wd.edges[eid], q = R.eq[e.id];
+      if (!q.length) { R.ebud[e.id] = 0; R.active.delete(eid); continue; }
+      R.ebud[e.id] = Math.min(R.ebud[e.id] + R.ecap[e.id], Math.max(1, R.ecap[e.id]));
+      const toNode = Wd.nodes[e.to];
+      while (q.length && R.exitT[q[0]] <= t && R.ebud[e.id] >= 1) {
+        const a = q[0];
+        if (toNode.exit) { q.shift(); R.st[a] = ST.SAFE; R.safeT[a] = t; R.ebud[e.id] -= 1; continue; }
+        const ne = next[e.to]; if (ne < 0) break;
+        if (R.eburn[ne] > 0 || R.eq[ne].length >= R.estore[ne]) break;
+        q.shift(); R.eq[ne].push(a); R.active.add(ne); R.exitT[a] = t + Wd.edges[ne].tt; R.ebud[e.id] -= 1;
+      }
+      let dl = 0; for (const a of q) if (R.exitT[a] < t) dl++;
+      R.edelay[e.id] += dl;
+    }
+
+    // fields
+    const f = Math.min(1, R.ws * DT / (BS * CELL));
+    const ns = new Float32Array(BW * BH);
+    for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) {
+      const sx = x - R.wx * f, sy = y - R.wy * f;
+      const x0 = Math.floor(sx), y0 = Math.floor(sy), fx = sx - x0, fy = sy - y0;
+      const g = (xx, yy) => (xx < 0 || yy < 0 || xx >= BW || yy >= BH) ? 0 : R.smoke[yy * BW + xx];
+      const v = g(x0, y0) * (1 - fx) * (1 - fy) + g(x0 + 1, y0) * fx * (1 - fy) + g(x0, y0 + 1) * (1 - fx) * fy + g(x0 + 1, y0 + 1) * fx * fy;
+      ns[y * BW + x] = v * 0.985 + R.burnCount[y * BW + x] * 0.08;
+    }
+    R.smoke = ns;
+    for (let b = 0; b < BW * BH; b++) R.info[b] *= 0.9885;
+    if (t % 6 === 0) {
+      const ni = new Float32Array(BW * BH);
+      for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) {
+        const b = y * BW + x; let s = R.info[b] * 0.6;
+        for (let k = 0; k < 4; k++) { const nx = x + DIRS[k][0], ny = y + DIRS[k][1]; if (nx >= 0 && ny >= 0 && nx < BW && ny < BH) s += R.info[ny * BW + nx] * 0.1; }
+        ni[b] = s;
+      }
+      R.info = ni;
+    }
+
+    if (t % 6 === 0) { const c = counts(R); R.series.push(c); if (c.onroad > R.peak) R.peak = c.onroad; }
+    const active = R.burning.length > 0;
+    let moving = false;
+    for (let h = 0; h < R.st.length; h++) { const s = R.st[h]; if (s === ST.PREPARING || s === ST.WAITING || s === ST.ONROAD) { moving = true; break; } }
+    if (t >= p.maxMin * 60 / DT || (!active && !moving)) R.done = true;
+  }
+
+  function counts(R) {
+    const c = [0, 0, 0, 0, 0, 0, 0];
+    for (let h = 0; h < R.st.length; h++) c[R.st[h]]++;
+    return { t: R.t, unaware: c[0], preparing: c[1], onroad: c[2] + c[3], safe: c[4], atrisk: c[5], trapped: c[6] };
+  }
+
+  function summary(R) {
+    const Wd = R.world, c = counts(R), safeTimes = [];
+    let threatened = 0, shadow = 0, departed = 0;
+    const zones = ZONES.map((z, i) => ({ id: z.id, foot: z.foot, homes: 0, threatened: 0, failed: 0,
+      orderMin: R.zoneAlert[i] >= 0 && R.zoneAlert[i] <= R.t ? R.zoneAlert[i] * DT / 60 : null }));
+    for (let h = 0; h < R.st.length; h++) {
+      const z = zones[Wd.homes[h].zone]; z.homes++;
+      if (R.safeT[h] >= 0) safeTimes.push(R.safeT[h]);
+      if (R.fireNear[h] >= 0) { threatened++; z.threatened++; }
+      if (R.st[h] === ST.ATRISK || R.st[h] === ST.TRAPPED) z.failed++;
+      if (R.departT[h] >= 0) {
+        departed++;
+        const za = R.zoneAlert[Wd.homes[h].zone];
+        if (za < 0 || R.departT[h] < za) shadow++;
+      }
+    }
+    safeTimes.sort((a, b) => a - b);
+    const t95 = safeTimes.length ? safeTimes[Math.floor(0.95 * (safeTimes.length - 1))] * DT / 60 : null;
+    let burned = 0; for (let i = 0; i < R.fire.length; i++) if (R.fire[i]) burned++;
+    const byRoad = {};
+    for (const e of Wd.edges) if (R.edelay[e.id] > 0) byRoad[e.name] = (byRoad[e.name] || 0) + R.edelay[e.id] * DT / 60;
+    const bottlenecks = Object.entries(byRoad).map(([name, vehMin]) => ({ name, vehMin })).sort((a, b) => b.vehMin - a.vehMin).slice(0, 4);
+    const orders = R.alertLog.map(a => a.t * DT / 60);
+    const failed = c.atrisk + c.trapped;
+    return Object.assign(c, { threatened, failed, pctThreatened: threatened ? failed / threatened : 0, t95,
+      burnedHa: burned * CELL * CELL / 10000, homes: R.st.length, shadow, departed, peak: R.peak,
+      firstOrderMin: orders.length ? Math.min(...orders) : null, bottlenecks,
+      zones: zones.sort((a, b) => (b.failed / b.homes) - (a.failed / a.homes) || b.threatened - a.threatened) });
+  }
+
+  function runToEnd(R) { while (!R.done) step(R); return summary(R); }
+
+  function randomIgnition(world, rng) {
+    if (world.ignCandidates) { const c = world.ignCandidates[Math.floor(rng() * world.ignCandidates.length)]; return { x: c % W, y: (c / W) | 0 }; }
+    for (;;) {
+      const x = 8 + Math.floor(rng() * 144), y = 14 + Math.floor(rng() * 26), c = y * W + x;
+      if (world.lu[c] === LU.CHAP) return { x, y };
+    }
+  }
+
+  return { setDims, setZones, zones: () => ZONES, FIRE, W, H, CELL, DT, BS, BW, BH, LU, ST, ZONES, LINES, buildWorld, newRun, step, runToEnd, summary, counts, randomIgnition, mulberry32, DEFAULTS };
+})();
+if (typeof module !== 'undefined') module.exports = Sim;
+
+</script>
+<script>
+const Study = (function () {
+  const SCEN = [
+    ['base', 'Baseline: afternoon, zones within 1.5 km, 10 min to issue', {}],
+    ['night', 'Night (2 a.m.)', { night: true }],
+    ['nightFast', 'Night, 5 min to issue, 2.5 km trigger', { night: true, lagMin: 5, trigKm: 2.5 }],
+    ['det2', 'Fire reported at 2 min instead of 8', { detectMin: 2 }],
+    ['det20', 'Fire reported at 20 min', { detectMin: 20 }],
+    ['lag0', 'Orders issued instantly', { lagMin: 0 }],
+    ['lag5', '5 min to issue each order', { lagMin: 5 }],
+    ['lag15', '15 min to issue each order', { lagMin: 15 }],
+    ['lag20', '20 min to issue each order', { lagMin: 20 }],
+    ['lag30', '30 min to issue each order', { lagMin: 30 }],
+    ['trig075', 'Tighter trigger, 0.75 km', { trigKm: 0.75 }],
+    ['trig25', 'Wider trigger, 2.5 km', { trigKm: 2.5 }],
+    ['all', 'Everyone ordered at once', { alertAll: true }],
+    ['allcf', 'Everyone at once plus contraflow', { alertAll: true, contraflow: true }],
+    ['cf', 'Contraflow, zone orders', { contraflow: true }],
+    ['adaptive', 'Households react to cues', { mode: 'adaptive' }],
+  ];
+  const TABLE_ROWS = ['base', 'night', 'nightFast', 'det2', 'det20', 'lag0', 'lag30', 'trig075', 'trig25', 'all', 'allcf', 'adaptive'];
+  const BASE = { windFrom: 0, windKmh: 50, detectMin: 8, trigKm: 1.5, lagMin: 10, night: false, alertAll: false, mode: 'rules', contraflow: false };
+
+  function fires(Sim, world, K, seed) {
+    const rng = Sim.mulberry32(seed), out = [];
+    for (let i = 0; i < K; i++) out.push({ ign: Sim.randomIgnition(world, rng), seed: (rng() * 1e6) | 0 });
+    return out;
+  }
+
+  function runScenario(Sim, world, F, params) {
+    const K = F.length, nh = world.homes.length, homeFail = new Float32Array(nh);
+    const a = { failed: 0, atrisk: 0, trapped: 0, threatened: 0, t95: 0, peak: 0, shadow: 0, departed: 0, firstOrderMin: 0 };
+    const nn = { t95: 0, firstOrderMin: 0 };
+    for (const f of F) {
+      const R = Sim.newRun(world, Object.assign({}, BASE, params, f));
+      const s = Sim.runToEnd(R);
+      for (const k in a) {
+        if (k in nn) { if (s[k] != null) { a[k] += s[k]; nn[k]++; } }
+        else a[k] += s[k] / K;
+      }
+      for (let h = 0; h < nh; h++) if (R.st[h] === Sim.ST.ATRISK || R.st[h] === Sim.ST.TRAPPED) homeFail[h] += 1 / K;
+    }
+    for (const k in nn) a[k] = nn[k] ? a[k] / nn[k] : null;
+    return { m: a, homeFail };
+  }
+
+  function geo(Sim, world, homeFail) {
+    let foot = 0, town = 0, spur = 0, total = 0, nf = 0, nt = 0, ns = 0, footSum = 0, ge10 = 0, any = 0;
+    world.homes.forEach((h, i) => {
+      const p = homeFail[i]; total += p;
+      const Z = world.zones || Sim.ZONES;
+      if (Z[h.zone].foot) { foot += p; nf++; } else { town += p; nt++; }
+      if (h.spur) { spur += p; ns++; } else if (Z[h.zone].foot) { footSum += p; }
+      if (p >= 0.1) ge10++; if (p > 0) any++;
+    });
+    return { footShare: total ? foot / total : 0, footHomeShare: nf / world.homes.length, footRatio: (foot / nf) / Math.max(1e-6, town / nt),
+      spurRatio: (spur / Math.max(1, ns)) / Math.max(1e-6, footSum / Math.max(1, nf - ns)), ge10, any, homes: world.homes.length };
+  }
+
+  async function run(Sim, world, opts) {
+    const K = opts.K || 24, F = fires(Sim, world, K, opts.seed || 2026), res = { K, seed: opts.seed || 2026, scen: {} };
+    for (let i = 0; i < SCEN.length; i++) {
+      const [key, label, p] = SCEN[i];
+      const r = runScenario(Sim, world, F, p);
+      res.scen[key] = Object.assign({ label }, r.m);
+      if (key === 'base') res.geo = geo(Sim, world, r.homeFail);
+      if (opts.progress) await opts.progress(i + 1, SCEN.length);
+    }
+    return res;
+  }
+
+  return { SCEN, TABLE_ROWS, run };
+})();
+if (typeof module !== 'undefined') module.exports = Study;
+
+const BAKED={"K":24,"seed":2026,"scen":{"base":{"label":"Baseline: afternoon, zones within 1.5 km, 10 min to issue","failed":26.5,"atrisk":24,"trapped":2.5,"threatened":569.1,"t95":132.5,"peak":188.1,"shadow":5.6,"departed":1198,"firstOrderMin":18},"night":{"label":"Night (2 a.m.)","failed":52.6,"atrisk":49,"trapped":3.6,"threatened":548.7,"t95":143.9,"peak":86,"shadow":3.7,"departed":1018.6,"firstOrderMin":18},"nightFast":{"label":"Night, 5 min to issue, 2.5 km trigger","failed":45,"atrisk":40.7,"trapped":4.3,"threatened":538.3,"t95":130,"peak":115.4,"shadow":1.6,"departed":1086.8,"firstOrderMin":13},"det2":{"label":"Fire reported at 2 min instead of 8","failed":16.9,"atrisk":15.8,"trapped":1.1,"threatened":544.6,"t95":129.4,"peak":173.4,"shadow":2.3,"departed":1174,"firstOrderMin":12},"det20":{"label":"Fire reported at 20 min","failed":44.8,"atrisk":41.2,"trapped":3.6,"threatened":546.4,"t95":129.7,"peak":214.5,"shadow":26,"departed":1166.5,"firstOrderMin":30},"lag0":{"label":"Orders issued instantly","failed":16.1,"atrisk":15,"trapped":1.2,"threatened":553.4,"t95":119.9,"peak":194.3,"shadow":1.1,"departed":1197.7,"firstOrderMin":8},"lag5":{"label":"5 min to issue each order","failed":20.2,"atrisk":18.6,"trapped":1.6,"threatened":557.8,"t95":114.4,"peak":187.6,"shadow":2.6,"departed":1147,"firstOrderMin":13},"lag15":{"label":"15 min to issue each order","failed":31.5,"atrisk":28.5,"trapped":3,"threatened":558.1,"t95":125.5,"peak":181.7,"shadow":11.6,"departed":1148.2,"firstOrderMin":23},"lag20":{"label":"20 min to issue each order","failed":44.2,"atrisk":40.6,"trapped":3.7,"threatened":511.5,"t95":133.4,"peak":166.5,"shadow":20.7,"departed":1145.4,"firstOrderMin":28},"lag30":{"label":"30 min to issue each order","failed":65.3,"atrisk":60.3,"trapped":5,"threatened":539.6,"t95":136.9,"peak":149.5,"shadow":57.4,"departed":1130.3,"firstOrderMin":38},"trig075":{"label":"Tighter trigger, 0.75 km","failed":38.7,"atrisk":36.5,"trapped":2.1,"threatened":485.1,"t95":128.7,"peak":94,"shadow":6,"departed":976.1,"firstOrderMin":21.9},"trig25":{"label":"Wider trigger, 2.5 km","failed":23.8,"atrisk":22,"trapped":1.8,"threatened":555.8,"t95":107.7,"peak":272.7,"shadow":5.6,"departed":1296.5,"firstOrderMin":18},"all":{"label":"Everyone ordered at once","failed":24.6,"atrisk":22.6,"trapped":2,"threatened":518.5,"t95":70.3,"peak":385.7,"shadow":5.6,"departed":1382.7,"firstOrderMin":18},"allcf":{"label":"Everyone at once plus contraflow","failed":24.6,"atrisk":22.6,"trapped":2,"threatened":518.5,"t95":67.4,"peak":262.1,"shadow":5.6,"departed":1382.7,"firstOrderMin":18},"cf":{"label":"Contraflow, zone orders","failed":25.9,"atrisk":24,"trapped":1.9,"threatened":569.1,"t95":131.2,"peak":124.9,"shadow":5.6,"departed":1198,"firstOrderMin":18},"adaptive":{"label":"Households react to cues","failed":13,"atrisk":12.3,"trapped":0.7,"threatened":550,"t95":118.6,"peak":173.8,"shadow":448.3,"departed":1558.4,"firstOrderMin":18}},"geo":{"footShare":0.923,"footHomeShare":0.507,"footRatio":11.663,"spurRatio":1.294,"ge10":14,"any":493,"homes":1569}};
+</script>
+<script>
+(function(){
+const S = Sim, world = S.buildWorld(), W = S.W, H = S.H, PX = 5;
+const $ = id => document.getElementById(id);
+const map = $('map'), ctx = map.getContext('2d');
+const P = { ign:{x:80,y:28}, windFrom:0, windKmh:50, night:false, detectMin:8, trigKm:1.5, lagMin:10, alertAll:false, mode:'rules', contraflow:false, seed:1 };
+let R = null, playing = false, started = false, logged = false, runNo = 0, risk = null, riskRuns = 0, hoverCell = -1, frame = 0;
+const speeds = [{n:'Slow',every:3,per:1},{n:'Normal',every:1,per:1},{n:'Fast',every:1,per:4},{n:'Very fast',every:1,per:12}];
+
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+// ---------- base map ----------
+const base = document.createElement('canvas'); base.width = W*PX; base.height = H*PX;
+(function drawBase(){
+  const b = base.getContext('2d'), e = world.elev, lu = world.lu;
+  const pal = { 0:[156,195,213], 1:[226,214,182], 2:[214,211,202], 3:[196,203,164], 4:[150,160,112] };
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    const c=y*W+x, col=pal[lu[c]];
+    let sh=1;
+    if (lu[c]!==0){ const ex=(e[y*W+Math.max(0,x-1)]-e[y*W+Math.min(W-1,x+1)]), ey=(e[Math.max(0,y-1)*W+x]-e[Math.min(H-1,y+1)*W+x]); sh=Math.max(.86,Math.min(1.1,1+(ex*0.4+ey)*0.0025)); }
+    b.fillStyle=`rgb(${col[0]*sh|0},${col[1]*sh|0},${col[2]*sh|0})`; b.fillRect(x*PX,y*PX,PX,PX);
+  }
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    const c=y*W+x; if (lu[c]===0) continue;
+    const k=Math.floor(e[c]/50);
+    if (x<W-1 && Math.floor(e[c+1]/50)!==k){ const idx=Math.max(k,Math.floor(e[c+1]/50))%4===0; b.fillStyle=idx?'rgba(90,70,40,.55)':'rgba(90,70,40,.28)'; b.fillRect(x*PX+PX-0.5,y*PX,1,PX); }
+    if (y<H-1 && Math.floor(e[c+W]/50)!==k){ const idx=Math.max(k,Math.floor(e[c+W]/50))%4===0; b.fillStyle=idx?'rgba(90,70,40,.55)':'rgba(90,70,40,.28)'; b.fillRect(x*PX,y*PX+PX-0.5,PX,1); }
+  }
+  b.font='500 13px "IBM Plex Sans",system-ui,sans-serif'; b.fillStyle='rgba(40,50,30,.75)';
+  b.fillText('Coast range ridge',60,40); b.fillStyle='rgba(30,70,100,.8)'; b.fillText('Ocean',380,490);
+})();
+
+// zone label positions
+const zonePos = S.ZONES.map((z,i)=>{ const hs=world.homes.filter(h=>h.zone===i); const x=hs.reduce((a,h)=>a+h.x,0)/hs.length, y=hs.reduce((a,h)=>a+h.y,0)/hs.length; return {x,y,n:hs.length}; });
+
+// ---------- sim control ----------
+function resetRun(){
+  R = S.newRun(world, P); playing=false; started=false; logged=false;
+  $('play').textContent='Start'; $('hint').style.display='';
+  renderAlerts(); updateTallies(); drawChart(); renderResults();
+}
+function describe(){
+  const wind = {0:'Sundowner',45:'Santa Ana',225:'Onshore'}[P.windFrom];
+  return {
+    cond:`${wind} ${P.windKmh} km/h, ${P.night?'2 a.m.':'afternoon'}`,
+    alert: P.alertAll ? `Everyone at once, reported at ${P.detectMin} min, ${P.lagMin} min to issue` : `Zones within ${P.trigKm} km, reported at ${P.detectMin} min, ${P.lagMin} min to issue`,
+    beh: (P.mode==='rules'?'Wait for the order':'Read the neighborhood') + (P.contraflow?', contraflow':'')
+  };
+}
+function logRun(){
+  if (logged) return; logged=true; runNo++;
+  const s=S.summary(R), d=describe(), tr=document.createElement('tr');
+  tr.innerHTML=`<td>${runNo}</td><td>${d.cond}</td><td>${d.alert}</td><td>${d.beh}</td><td class="n" style="color:var(--risk)">${s.failed}</td><td class="n">${s.threatened?pct(s.pctThreatened):'–'}</td><td class="n">${fmtMin(s.firstOrderMin)}</td><td class="n">${fmtMin(s.t95)}</td><td class="n">${s.peak}</td><td class="n">${s.shadow}</td>`;
+  $('cmpBody').prepend(tr); $('cmpEmpty').style.display='none';
+}
+function pct(x){ return Math.round(x*100)+'%'; }
+function fmtMin(m){ if (m==null) return '–'; m=Math.round(m); return `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`; }
+function renderResults(){
+  const s=S.summary(R);
+  if (!started){ ['m-fail','m-order','m-t95','m-peak','m-shadow'].forEach(id=>$(id).textContent='–'); $('zoneBody').innerHTML=''; $('bnBody').innerHTML=''; $('resSub').textContent='Start a fire to see results. They update live and settle when the run finishes.'; renderParcel(); return; }
+  const d=describe();
+  $('resSub').textContent=(R.done?'Final results. ':'Live, still running. ')+`${d.cond}. ${d.alert}. ${d.beh}.`;
+  $('m-fail').textContent=s.failed;
+  $('m-fail-d').textContent= s.threatened? `${pct(s.pctThreatened)} of the ${s.threatened} homes the fire reached. ${s.atrisk} never left, ${s.trapped} caught on a road.` : 'Fire has not reached any homes yet.';
+  $('m-order').textContent= s.firstOrderMin==null? 'None yet' : 'T+'+fmtMin(s.firstOrderMin);
+  $('m-order-d').textContent= s.firstOrderMin==null? 'No zone has been ordered to leave' : `Fire reported at ${P.detectMin} min, ${P.lagMin} min to issue`;
+  $('m-t95').textContent= s.t95==null? '–' : 'T+'+fmtMin(s.t95);
+  $('m-peak').textContent=s.peak;
+  $('m-peak-d').textContent=`Household vehicles at the busiest moment, out of ${s.departed.toLocaleString()} that left`;
+  $('m-shadow').textContent=s.shadow;
+  $('zoneBody').innerHTML=s.zones.map(z=>`<tr><td>${z.id} ${z.foot?'foothills':'town'}</td><td class="n">${z.homes}</td><td class="n">${z.threatened}</td><td class="n" style="color:${z.failed?'var(--risk)':'inherit'}">${z.failed}</td><td class="n">${z.orderMin==null?'Not ordered':'T+'+fmtMin(z.orderMin)}</td></tr>`).join('');
+  const mx=s.bottlenecks.length? s.bottlenecks[0].vehMin:1;
+  $('bnBody').innerHTML= s.bottlenecks.length? s.bottlenecks.map(b=>`<tr><td>${b.name}</td><td class="n">${Math.round(b.vehMin).toLocaleString()}</td><td><div class="bar" style="width:${Math.max(4,100*b.vehMin/mx)}%"></div></td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--muted)">No queues yet</td></tr>';
+  renderParcel();
+}
+function renderParcel(){
+  if (!risk){ $('m-parcel').textContent='–'; return; }
+  let hi=0, f=0, nf=0, t=0, nt=0;
+  world.homes.forEach((h,i)=>{ const p=risk[i]/riskRuns; if (p>=0.1) hi++; if (S.ZONES[h.zone].foot){ f+=p; nf++; } else { t+=p; nt++; } });
+  $('m-parcel').textContent=hi;
+  const ratio = t>0 ? `, and foothill homes are ${Math.round((f/nf)/(t/nt))} times as likely not to get out as town homes` : '';
+  $('m-parcel-d').textContent=`Homes that didn't get out in 10% or more of ${riskRuns} fires${ratio}.`;
+}
+function fmtT(ticks){ const m=Math.round(ticks*S.DT/60); return `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`; }
+
+function renderAlerts(){
+  const ul=$('alerts'); ul.innerHTML='';
+  if (!R || !R.alertLog.length){ const li=document.createElement('li'); li.innerHTML='<span style="color:var(--muted)">No evacuation orders yet</span>'; ul.appendChild(li); return; }
+  for (const a of R.alertLog){ const li=document.createElement('li'); li.innerHTML=`<span>Zone ${a.zone} ordered to leave</span><span>T+${fmtT(a.t)}</span>`; ul.appendChild(li); }
+}
+function updateTallies(){
+  const c=S.counts(R);
+  $('k-safe').textContent=c.safe.toLocaleString(); $('k-road').textContent=c.onroad; $('k-prep').textContent=c.preparing;
+  $('k-risk').textContent=c.atrisk; $('k-trap').textContent=c.trapped; $('clock').textContent='T+'+fmtT(R.t);
+}
+
+// ---------- drawing ----------
+const HC = { 0:'#5B6970', 1:'#F08C00', 2:'#1971C2', 3:'#1971C2', 4:'#0B7A75', 5:'#C92A2A', 6:'#7B2D8E' };
+function riskColor(p){ if (p<=0) return '#6FB7A8'; if (p<0.1) return '#F2C94C'; if (p<0.3) return '#F08C00'; return '#C92A2A'; }
+
+function draw(){
+  const layer=$('layer').value;
+  ctx.drawImage(base,0,0);
+  // fire
+  const fire=R.fire;
+  for (let c=0;c<fire.length;c++){
+    if (!fire[c]) continue;
+    const x=c%W, y=(c/W)|0;
+    if (fire[c]===2){ ctx.fillStyle='rgba(38,30,26,.72)'; }
+    else { ctx.fillStyle = ((R.burnLeft[c]+frame)%6<3)?'#FF5A1F':'#FFB020'; }
+    ctx.fillRect(x*PX,y*PX,PX,PX);
+  }
+  // fields
+  const B=S.BS*PX;
+  if (layer==='smoke'||layer==='info'||layer==='cong'){
+    let cong=null;
+    if (layer==='cong'){ cong=new Float32Array(S.BW*S.BH); for (const e of world.edges){ const q=R.eq[e.id].length; if(q){ const b=((e.my|0)>>2)*S.BW+((e.mx|0)>>2); cong[b]+=q; } } }
+    for (let b=0;b<S.BW*S.BH;b++){
+      const x=b%S.BW, y=(b/S.BW)|0; let a=0, col='';
+      if (layer==='smoke'){ a=Math.min(.62,R.smoke[b]/14); col='70,62,88'; }
+      else if (layer==='info'){ a=Math.min(.6,R.info[b]/2.5); col='11,122,117'; }
+      else { a=Math.min(.65,cong[b]/12); col='201,42,42'; }
+      if (a>0.02){ ctx.fillStyle=`rgba(${col},${a})`; ctx.fillRect(x*B,y*B,B,B); }
+    }
+  }
+  // roads
+  ctx.lineCap='round';
+  for (const e of world.edges){
+    if (e.from>e.to) continue;
+    const a=world.nodes[e.from], b=world.nodes[e.to];
+    const rev=world.nodes[e.to].out.find(id=>world.edges[id].to===e.from);
+    const ratio=Math.max(R.eq[e.id].length/R.estore[e.id], rev!=null?R.eq[rev].length/R.estore[rev]:0);
+    const closed=R.eburn[e.id]>0;
+    ctx.lineWidth = e.type==='hwy'?3.6:e.type==='art'?2.6:1.7;
+    ctx.strokeStyle = closed?'#B00020': ratio>0.66?'#C92A2A': ratio>0.33?'#F08C00': ratio>0.05?'#E8B84A':'#4E5A61';
+    ctx.setLineDash(closed?[4,3]:[]);
+    ctx.beginPath(); ctx.moveTo(a.x*PX+2.5,a.y*PX+2.5); ctx.lineTo(b.x*PX+2.5,b.y*PX+2.5); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // homes
+  for (const h of world.homes){
+    if (layer==='risk'){ ctx.fillStyle = risk? riskColor(risk[h.id]/riskRuns):'#8A979E'; }
+    else ctx.fillStyle = HC[R.st[h.id]];
+    ctx.fillRect(h.x*PX+1,h.y*PX+1,3,3);
+  }
+  // vehicles
+  ctx.fillStyle='#FFFFFF'; ctx.strokeStyle='#14222D'; ctx.lineWidth=0.8;
+  for (const e of world.edges){
+    const q=R.eq[e.id]; if (!q.length) continue;
+    const a=world.nodes[e.from], b=world.nodes[e.to], gap=12.75/e.len;
+    let lim=1;
+    for (let i=0;i<q.length;i++){
+      const ag=q[i], start=R.exitT[ag]-e.tt; let pr=Math.min(1,Math.max(0,(R.t-start)/e.tt)); pr=Math.min(pr,lim); lim=pr-gap;
+      const px=(a.x+(b.x-a.x)*pr)*PX+2.5, py=(a.y+(b.y-a.y)*pr)*PX+2.5;
+      const ox=(b.y-a.y), oy=-(b.x-a.x), ol=Math.hypot(ox,oy)||1;
+      ctx.beginPath(); ctx.arc(px+ox/ol*1.8,py+oy/ol*1.8,1.9,0,7); ctx.fill(); ctx.stroke();
+    }
+  }
+  // zone labels
+  ctx.font='600 13px "Barlow Condensed","Arial Narrow",sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  S.ZONES.forEach((z,i)=>{
+    const p=zonePos[i], alerted=R.zoneAlert[i]>=0 && R.t>=R.zoneAlert[i];
+    const x=p.x*PX, y=(z.foot? p.y-5 : p.y)*PX;
+    ctx.fillStyle = alerted?'#6741D9':'rgba(255,255,255,.82)'; ctx.beginPath(); ctx.roundRect(x-15,y-9,30,18,4); ctx.fill();
+    ctx.fillStyle = alerted?'#fff':'#2B3A42'; ctx.fillText(z.id,x,y+1);
+  });
+  // exits
+  ctx.font='500 12px "IBM Plex Sans",system-ui,sans-serif';
+  for (const n of world.nodes) if (n.exit){
+    const x=n.x*PX, y=n.y*PX, left=n.x<10;
+    ctx.fillStyle='rgba(11,122,117,.95)'; ctx.beginPath(); ctx.roundRect(left?x+4:x-94,y-26,90,18,4); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.fillText(left?'Safety, west':'Safety, east',left?x+49:x-49,y-16);
+  }
+  // ignition
+  const ix=P.ign.x*PX+2.5, iy=P.ign.y*PX+2.5;
+  ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(ix,iy,9,0,7); ctx.stroke();
+  ctx.strokeStyle='#D9480F'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(ix,iy,9,0,7); ctx.stroke();
+  // wind arrow
+  const wx=R.wx, wy=R.wy, cx=740, cy=40, L=18;
+  ctx.fillStyle='rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(cx,cy,28,0,7); ctx.fill();
+  ctx.strokeStyle='#1B2A33'; ctx.lineWidth=2.2; ctx.beginPath(); ctx.moveTo(cx-wx*L,cy-wy*L); ctx.lineTo(cx+wx*L,cy+wy*L); ctx.stroke();
+  const ang=Math.atan2(wy,wx); ctx.beginPath(); ctx.moveTo(cx+wx*L,cy+wy*L); ctx.lineTo(cx+wx*L-Math.cos(ang-0.5)*8,cy+wy*L-Math.sin(ang-0.5)*8); ctx.moveTo(cx+wx*L,cy+wy*L); ctx.lineTo(cx+wx*L-Math.cos(ang+0.5)*8,cy+wy*L-Math.sin(ang+0.5)*8); ctx.stroke();
+  ctx.fillStyle='#1B2A33'; ctx.font='500 11px "IBM Plex Sans",system-ui'; ctx.fillText(P.windKmh+' km/h',cx,cy+40);
+}
+
+function legend(){
+  const layer=$('layer').value, L=$('legend');
+  let items;
+  if (layer==='risk') items=[['#6FB7A8','Got out in every run'],['#F2C94C','Under 10% of runs'],['#F08C00','10–30%'],['#C92A2A','Over 30%']];
+  else items=[['#5B6970','Not yet warned'],['#F08C00','Getting ready'],['#1971C2','On the road'],['#0B7A75','Reached safety'],['#C92A2A','Fire reached home first'],['#7B2D8E','Caught on road'],['#FF5A1F','Active fire'],['#B00020','Road closed by fire']];
+  if (layer==='smoke') items.push(['rgba(70,62,88,.6)','Smoke density']);
+  if (layer==='info') items.push(['rgba(11,122,117,.55)','Neighbors seen leaving']);
+  if (layer==='cong') items.push(['rgba(201,42,42,.5)','Vehicles queued']);
+  L.innerHTML=items.map(([c,t])=>`<span><i class="sw" style="background:${c}"></i>${t}</span>`).join('');
+}
+
+function drawChart(){
+  const cv=$('chart'), dpr=window.devicePixelRatio||1, w=cv.clientWidth, h=150;
+  cv.width=w*dpr; cv.height=h*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,w,h);
+  const ser=R?R.series:[]; const tot=world.homes.length;
+  const pad={l:40,r:10,t:8,b:22}, iw=w-pad.l-pad.r, ih=h-pad.t-pad.b;
+  const tmax=Math.max(120, ser.length? ser[ser.length-1].t*S.DT/60:0);
+  g.strokeStyle=cssVar('--line'); g.fillStyle=cssVar('--muted'); g.font='12px "IBM Plex Sans",system-ui'; g.lineWidth=1;
+  for (let i=0;i<=4;i++){ const y=pad.t+ih*i/4; g.beginPath(); g.moveTo(pad.l,y); g.lineTo(w-pad.r,y); g.stroke(); g.textAlign='right'; g.fillText(Math.round(tot*(1-i/4)),pad.l-6,y+4); }
+  g.textAlign='center';
+  for (let m=0;m<=tmax;m+=30){ const x=pad.l+iw*m/tmax; g.fillText(`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`,x,h-6); }
+  const lines=[['safe','--safe'],['onroad','--road'],['preparing','--ember'],['atrisk','--risk'],['trapped','--caught']];
+  for (const [k,v] of lines){
+    g.strokeStyle=cssVar(v); g.lineWidth=2; g.beginPath();
+    ser.forEach((s,i)=>{ const x=pad.l+iw*(s.t*S.DT/60)/tmax, y=pad.t+ih*(1-s[k]/tot); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.stroke();
+  }
+}
+
+// ---------- loop ----------
+function tick(){
+  frame++;
+  if (playing && R && !R.done){
+    const sp=speeds[+$('speed').value];
+    if (frame%sp.every===0) for (let i=0;i<sp.per && !R.done;i++) S.step(R);
+    if (frame%6===0){ updateTallies(); drawChart(); renderAlerts(); renderResults(); }
+    if (R.done){ playing=false; $('play').textContent='Finished'; updateTallies(); drawChart(); renderAlerts(); renderResults(); logRun(); }
+  }
+  draw();
+  requestAnimationFrame(tick);
+}
+
+// ---------- controls ----------
+function setPressed(on,off){ $(on).setAttribute('aria-pressed','true'); $(off).setAttribute('aria-pressed','false'); }
+function changed(){ resetRun(); }
+$('play').onclick=()=>{
+  if (R.done){ resetRun(); }
+  playing=!playing; started=true; $('hint').style.display='none';
+  $('play').textContent=playing?'Pause':'Resume';
+};
+$('finish').onclick=()=>{ started=true; $('hint').style.display='none'; while(!R.done) S.step(R); playing=false; $('play').textContent='Finished'; updateTallies(); drawChart(); renderAlerts(); renderResults(); logRun(); };
+$('reset').onclick=resetRun;
+$('speed').oninput=e=>{ $('speedOut').textContent=speeds[+e.target.value].n; };
+$('wind').onchange=e=>{ P.windFrom=+e.target.value; changed(); };
+$('ws').oninput=e=>{ P.windKmh=+e.target.value; $('wsOut').textContent=P.windKmh+' km/h'; };
+$('ws').onchange=changed;
+$('day').onclick=()=>{ P.night=false; setPressed('day','night'); changed(); };
+$('night').onclick=()=>{ P.night=true; setPressed('night','day'); changed(); };
+$('randIgn').onclick=()=>{ P.ign=S.randomIgnition(world,Math.random); P.seed=(Math.random()*1e6)|0; changed(); };
+$('det').oninput=e=>{ P.detectMin=+e.target.value; $('detOut').textContent=P.detectMin+' min'; }; $('det').onchange=changed;
+$('trig').oninput=e=>{ P.trigKm=+e.target.value; $('trigOut').textContent=P.trigKm+' km'; }; $('trig').onchange=changed;
+$('lag').oninput=e=>{ P.lagMin=+e.target.value; $('lagOut').textContent=P.lagMin+' min'; }; $('lag').onchange=changed;
+$('polTrig').onclick=()=>{ P.alertAll=false; setPressed('polTrig','polAll'); $('trig').disabled=false; changed(); };
+$('polAll').onclick=()=>{ P.alertAll=true; setPressed('polAll','polTrig'); $('trig').disabled=true; changed(); };
+const notes={ rules:'Households leave when they get the official order or see flames nearby, and take the fastest open route.',
+  adaptive:'Households also react to smoke and to neighbors leaving, and steer around congestion and fire. Watch for shadow evacuation from zones that were never ordered out.' };
+$('mRules').onclick=()=>{ P.mode='rules'; setPressed('mRules','mAdapt'); $('modeNote').textContent=notes.rules; changed(); };
+$('mAdapt').onclick=()=>{ P.mode='adaptive'; setPressed('mAdapt','mRules'); $('modeNote').textContent=notes.adaptive; changed(); };
+$('cf').onchange=e=>{ P.contraflow=e.target.checked; changed(); };
+$('layer').onchange=legend;
+$('clearCmp').onclick=()=>{ $('cmpBody').innerHTML=''; $('cmpEmpty').style.display=''; runNo=0; };
+
+function cellFromEvent(ev){
+  const r=map.getBoundingClientRect(); const x=Math.floor((ev.clientX-r.left)/r.width*W), y=Math.floor((ev.clientY-r.top)/r.height*H);
+  return (x<0||y<0||x>=W||y>=H)?null:{x,y};
+}
+map.addEventListener('click',ev=>{
+  const p=cellFromEvent(ev); if(!p) return;
+  const lu=world.lu[p.y*W+p.x];
+  if (lu===S.LU.OCEAN || lu===S.LU.BEACH){ $('status').textContent='Fires need fuel. Pick a spot on land.'; return; }
+  P.ign=p; P.seed=(Math.random()*1e6)|0; resetRun();
+});
+const LUN=['ocean','beach','town','foothill neighborhoods','chaparral'];
+map.addEventListener('mousemove',ev=>{
+  const p=cellFromEvent(ev); if(!p) return; const c=p.y*W+p.x;
+  let s=`${LUN[world.lu[c]][0].toUpperCase()+LUN[world.lu[c]].slice(1)}, ${Math.round(world.elev[c])} m elevation`;
+  if (R.arrival[c]>=0) s+=`, fire arrived T+${fmtT(R.arrival[c])}`;
+  const h=world.homes.find(h=>Math.abs(h.x-p.x)<=0 && Math.abs(h.y-p.y)<=0);
+  if (h){
+    s+=`. Home in zone ${S.ZONES[h.zone].id}`;
+    const lbl=['not yet warned','getting ready','waiting to get on the road','on the road','reached safety','fire reached home first','caught on a burning road'][R.st[h.id]];
+    s+=`: ${lbl}`;
+    if (R.departT[h.id]>=0) s+=`, left T+${fmtT(R.departT[h.id])}`;
+    if (risk && riskRuns) s+=`. Didn't get out in ${risk[h.id]} of ${riskRuns} mapped fires`;
+  }
+  $('status').textContent=s+'.';
+});
+
+$('ens').onclick=()=>{
+  const btn=$('ens'); btn.disabled=true; const K=12; let i=0;
+  const acc=new Uint16Array(world.homes.length), rng=S.mulberry32(Date.now()&0xffff);
+  function one(){
+    const ign=S.randomIgnition(world,rng);
+    const Rr=S.newRun(world,Object.assign({},P,{ign,seed:(rng()*1e6)|0}));
+    S.runToEnd(Rr);
+    for (let h=0;h<acc.length;h++) if (Rr.st[h]===S.ST.ATRISK||Rr.st[h]===S.ST.TRAPPED) acc[h]++;
+    i++; $('ensNote').textContent=`Running fire ${i} of ${K}…`;
+    if (i<K) setTimeout(one,0);
+    else {
+      risk=acc; riskRuns=K; btn.disabled=false;
+      let hi=0; for (const v of acc) if (v/K>=0.1) hi++;
+      $('ensNote').textContent=`Done. ${hi} of ${acc.length.toLocaleString()} homes failed to get out in at least 10% of the ${K} fires under these settings. Hover a home for its count.`;
+      $('layer').value='risk'; legend(); renderParcel();
+    }
+  }
+  $('ensNote').textContent=`Running fire 1 of ${K}…`; setTimeout(one,20);
+};
+
+
+// ---------- policy study ----------
+let STUDY = BAKED;
+function r1(x){ return (Math.round(x*10)/10).toString(); }
+function renderStudy(){
+  const d=STUDY, s=d.scen, g=d.geo;
+  $('studySub').textContent=`${d.K} fires from random ignitions under a 50 km/h Sundowner, run through every scenario. Each scenario uses the same fires and random draws, so the differences come from the policy, not the fire. Values are means per fire across ${g.homes.toLocaleString()} households.`;
+  $('studyBody').innerHTML=Study.TABLE_ROWS.map(k=>{ const r=s[k]; return `<tr class="${k==='base'?'hl':''}"><td>${r.label}</td><td class="n" style="color:var(--risk)">${r1(r.failed)}</td><td class="n">${r1(r.trapped)}</td><td class="n">${fmtMin(r.firstOrderMin)}</td><td class="n">${fmtMin(r.t95)}</td><td class="n">${Math.round(r.peak)}</td></tr>`; }).join('');
+  const slope=(s.lag30.failed-s.lag0.failed)/30;
+  const F=[
+    ['Minutes of warning matter more than anything else',
+     `Each minute between ignition and the order costs about ${r1(slope)} households per fire. Going from instant orders to 30 minutes to issue takes losses from ${r1(s.lag0.failed)} to ${r1(s.lag30.failed)}. A fire reported at 20 minutes instead of 2 costs ${r1(s.det20.failed)} households instead of ${r1(s.det2.failed)}. Manage total time from ignition to order: detection and issuing both count.`],
+    ['The failure mode is not leaving, not traffic',
+     `${pct(s.base.atrisk/s.base.failed)} of the households that didn't get out never left home before fire arrived. Only ${r1(s.base.trapped)} per fire were caught on a road. In this network the constraint is the warning and decision chain, not road capacity.`],
+    [`Night multiplies the toll by ${r1(s.night.failed/s.base.failed)}, and faster orders don't close the gap`,
+     `At 2 a.m., ${r1(s.night.failed)} households per fire don't get out, against ${r1(s.base.failed)} in the afternoon. Issuing orders in 5 minutes with a 2.5 km trigger still leaves ${r1(s.nightFast.failed)}. The limit at night is reach: fewer people receive a phone alert while asleep. Alerting that wakes people up, like sirens, high-low tones and door-to-door, matters more than speed.`],
+    ['Ordering more people out changes the traffic far more than the toll',
+     `Ordering everyone at once saves ${r1(s.base.failed-s.all.failed)} households per fire, because the people at risk are nearest the fire and need lead time. But clearance drops from ${Math.round(s.base.t95)} to ${Math.round(s.all.t95)} minutes, and peak road load rises from ${Math.round(s.base.peak)} to ${Math.round(s.all.peak)} vehicles. A tighter 0.75 km trigger raises losses to ${r1(s.trig075.failed)}.`],
+    ['Contraflow is congestion insurance for mass orders',
+     `Under a mass order, contraflow on the canyon arterials cuts peak road load by ${pct(1-s.allcf.peak/s.all.peak)}, from ${Math.round(s.all.peak)} to ${Math.round(s.allcf.peak)} vehicles. Under zone orders the toll barely moves, from ${r1(s.base.failed)} to ${r1(s.cf.failed)}.`],
+    ['Informal cues save lives and create shadow evacuation',
+     `When households react to smoke and to neighbors leaving, losses fall from ${r1(s.base.failed)} to ${r1(s.adaptive.failed)} per fire. But ${Math.round(s.adaptive.shadow)} households leave before their zone is ordered, against ${Math.round(s.base.shadow)} under rule-based behavior. Total departures rise from ${Math.round(s.base.departed).toLocaleString()} to ${Math.round(s.adaptive.departed).toLocaleString()}. A rule-based model misses both the benefit and the traffic.`],
+    ['Risk is geographic and shallow, so score parcels across many fires',
+     `Foothill zones hold ${pct(g.footHomeShare)} of homes but ${pct(g.footShare)} of losses, and a foothill home is about ${Math.round(g.footRatio)} times as likely not to get out as a town home. Homes on dead-end lanes carry about ${pct(Math.max(0,g.spurRatio-1))} more risk again. ${g.any} homes failed in at least one of ${d.K} fires, but only ${g.ge10} failed in 10% or more. A single-fire answer is misleading; a parcel egress score needs an ensemble of fires.`],
+  ];
+  $('findings').innerHTML=F.map(([h,p])=>`<div class="finding"><h3>${h}</h3><p>${p}</p></div>`).join('');
+  $('caveat').textContent='Every parameter here is synthetic and uncalibrated: alert reach, departure delays, fire behavior, road capacities and the geography itself. The absolute numbers mean nothing. What carries over is the shape of the tradeoffs and the fact that the tool can quantify them. Some findings would likely change on a real network; the traffic finding in particular could flip in a place with more constrained roads, which is the case for calibrating it.';
+  drawLag();
+}
+function drawLag(){
+  const s=STUDY.scen, cv=$('lagChart'), dpr=window.devicePixelRatio||1, w=cv.clientWidth, h=220;
+  cv.width=w*dpr; cv.height=h*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,w,h);
+  const pts=[[0,s.lag0.failed],[5,s.lag5.failed],[10,s.base.failed],[15,s.lag15.failed],[20,s.lag20.failed],[30,s.lag30.failed]];
+  const ymax=Math.ceil(Math.max(...pts.map(p=>p[1]))/10)*10+10, pad={l:40,r:30,t:14,b:28}, iw=w-pad.l-pad.r, ih=h-pad.t-pad.b;
+  const X=m=>pad.l+iw*m/30, Y=v=>pad.t+ih*(1-v/ymax);
+  g.font='12px "IBM Plex Sans",system-ui'; g.fillStyle=cssVar('--muted'); g.strokeStyle=cssVar('--line'); g.lineWidth=1;
+  for (let v=0;v<=ymax;v+=ymax/4){ g.beginPath(); g.moveTo(pad.l,Y(v)); g.lineTo(w-pad.r,Y(v)); g.stroke(); g.textAlign='right'; g.fillText(Math.round(v),pad.l-6,Y(v)+4); }
+  g.textAlign='center'; for (const [m] of pts) g.fillText(m+' min',X(m),h-8);
+  g.strokeStyle=cssVar('--risk'); g.lineWidth=2.5; g.beginPath(); pts.forEach(([m,v],i)=>i?g.lineTo(X(m),Y(v)):g.moveTo(X(m),Y(v))); g.stroke();
+  g.fillStyle=cssVar('--risk'); g.font='500 12px "IBM Plex Sans",system-ui';
+  for (const [m,v] of pts){ g.beginPath(); g.arc(X(m),Y(v),3.5,0,7); g.fill(); g.textAlign=m===0?'left':'center'; g.fillText(r1(v),X(m)+(m===0?6:0),Y(v)-9); }
+}
+$('rerun').onclick=async()=>{
+  const b=$('rerun'); b.disabled=true;
+  const seed=(Math.random()*1e6)|0;
+  const res=await Study.run(S,world,{K:24,seed,progress:(i,n)=>new Promise(r=>{ $('rerunNote').textContent=`Running scenario ${i} of ${n}…`; setTimeout(r,0); })});
+  STUDY=res; renderStudy(); b.disabled=false;
+  $('rerunNote').textContent='Done. The table, chart and findings now reflect the new set of fires.';
+};
+
+window.addEventListener('resize',()=>{ drawChart(); drawLag(); });
+renderStudy();
+legend(); resetRun(); requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
