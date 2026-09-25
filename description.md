@@ -86,7 +86,11 @@ s(c, n) = \frac{E(n) - E(c)}{d(c, n)}
 where $E(c)$ is terrain elevation in meters, and $d(c, n) \in \{\Delta x, \sqrt{2}\Delta x\}$.
 
 * **Wind Vector Factor ($\Phi_W$)**:
-  For wind velocity vector $\vec{w} = (ws \cdot \cos \theta_w, ws \cdot \sin \theta_w)$ with wind speed $ws$ in $\text{km/h}$ and compass direction $\theta_w$:
+  For wind velocity vector with speed $ws$ ($\text{km/h}$) and compass azimuth $\theta_w$:
+
+```math
+\vec{w} = \big(ws \cdot \cos(\theta_w), \, ws \cdot \sin(\theta_w)\big)
+```
 
 ```math
 \Phi_W(k) = \exp\left( \left(\frac{ws}{30}\right)^{1.6} \cdot \cos(\theta_k - \theta_w) \right)
@@ -95,13 +99,28 @@ where $E(c)$ is terrain elevation in meters, and $d(c, n) \in \{\Delta x, \sqrt{
 where $\theta_k$ is the azimuth pointing from cell $c$ to neighbor $k \in \{0, \dots, 7\}$.
 
 ### 2.3 Long-Range Ember Spotting
-To replicate spotting under extreme wind events (e.g. 50–80 km/h Sundowner or Santa Ana winds), burning cells cast downwind embers with spot probability:
+
+To replicate fire spotting under extreme wind events (e.g. 50–80 km/h Sundowner or Santa Ana winds), burning cells cast downwind embers with spot probability:
 
 ```math
-P_{\text{spot}}(c) = P_{\text{spot\_base}} \cdot \left(\frac{ws}{10}\right)^2 \cdot F_c
+P_{\text{spot}}(c) = P_{\text{spot,base}} \cdot \left(\frac{ws}{10}\right)^2 \cdot F_c
 ```
 
-where $P_{\text{spot\_base}} = 0.0003$. Embers travel downwind along angle $\theta = \theta_w + \mathcal{U}(-0.3, 0.3)$ to distance $D_{\text{spot}} = 3 + \mathcal{U}(0, 1) \cdot ws \cdot 0.5$ grid units.
+Embers travel downwind with direction angle $\theta_{\text{spot}}$ and distance $D_{\text{spot}}$ governed by:
+
+```math
+\theta_{\text{spot}} = \theta_w + \mathcal{U}(-0.3, \, 0.3)
+```
+
+```math
+D_{\text{spot}} = 3 + 0.5 \cdot ws \cdot \mathcal{U}(0, \, 1)
+```
+
+where:
+* **Base Spotting Coefficient**: $P_{\text{spot,base}} = 0.0003$.
+* **Wind Direction**: $\theta_w$ is the downwind azimuth angle.
+* **Angular Dispersion**: $\mathcal{U}(-0.3, 0.3)$ adds lateral ember spread ($\approx \pm 17^\circ$).
+* **Maximum Spotting Distance**: Scales with wind velocity $ws$, reaching up to 20–40 grid cells (1–2 km) downwind under severe gusts.
 
 ### 2.4 Burn Duration & Extinction
 Burning cells remain active for duration $\tau_{\text{burn}}(\text{LandUse})$ before transitioning to state $2$ (Burnt Out):
@@ -178,8 +197,12 @@ Traffic is simulated via a link-based spatial queue model (inspired by MATSim) c
 
 ### 4.1 Road Network Graph Topology
 The network is represented as a directed graph $G = (V, E)$:
-* **Nodes $V$**: Road intersections, cul-de-sac turnarounds, and network exit boundaries ($v_{\text{exit}} = \text{True}$).
-* **Edges $E$**: Unidirectional road links with length $L_e$, lanes $n_e$, free-flow speed limit $v_e$, free-flow travel time $TT_e = \lceil L_e / (v_e \cdot \Delta t) \rceil$, and spatial storage capacity.
+* **Nodes $V$**: Road intersections, cul-de-sacs, and network boundary exits ($v_{\text{exit}} = \text{True}$).
+* **Edges $E$**: Unidirectional road links with length $L_e$, lanes $n_e$, speed limit $v_e$, and free-flow travel time:
+
+```math
+TT_e = \left\lceil \frac{L_e}{v_e \cdot \Delta t} \right\rceil
+```
 
 ### 4.2 Link Storage and Discharge Capacity
 * **Flow Capacity ($C_e$)**: Maximum household vehicles that can discharge into a downstream node per 10-second tick:
@@ -277,7 +300,13 @@ The policy is optimized using the clipped surrogate objective:
 L^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[ \min\left( r_t(\theta) \hat{A}_t, \, \text{clip}(r_t(\theta), 1 - \epsilon, 1 + \epsilon) \hat{A}_t \right) \right]
 ```
 
-where the probability ratio is $r_t(\theta) = \frac{\pi_\theta(a_t | s_t)}{\pi_{\theta_{\text{old}}}(a_t | s_t)}$ with clipping parameter $\epsilon = 0.2$.
+where the probability ratio is:
+
+```math
+r_t(\theta) = \frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}
+```
+
+with clipping hyperparameter $\epsilon = 0.2$.
 
 Advantages $\hat{A}_t$ are computed via **Generalized Advantage Estimation (GAE)**:
 
