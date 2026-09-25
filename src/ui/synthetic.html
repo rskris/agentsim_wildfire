@@ -175,7 +175,7 @@ tr.hl td{background:var(--soft)}
         <input type="range" id="det" min="0" max="30" step="1" value="8">
         <label class="row">Who gets the evacuation order</label>
         <div class="seg" role="group" aria-label="Alert policy">
-          <button id="polTrig" aria-pressed="true">Zones near the fire</button><button id="polAll" aria-pressed="false">Everyone at once</button>
+          <button id="polTrig" aria-pressed="true">Zones near fire</button><button id="polAll" aria-pressed="false">Mass order</button><button id="polRL" aria-pressed="false">AI Agent (PPO)</button>
         </div>
         <label class="row" for="trig">Order a zone when fire is within <output id="trigOut">1.5 km</output></label>
         <input type="range" id="trig" min="0.5" max="4" step="0.25" value="1.5">
@@ -280,6 +280,9 @@ tr.hl td{background:var(--soft)}
 const BAKED=/*BAKED*/;
 </script>
 <script>
+/*RL*/
+</script>
+<script>
 (function(){
 const S = Sim, world = S.buildWorld(), W = S.W, H = S.H, PX = 5;
 const $ = id => document.getElementById(id);
@@ -322,9 +325,11 @@ function resetRun(){
 }
 function describe(){
   const wind = {0:'Sundowner',45:'Santa Ana',225:'Onshore'}[P.windFrom];
+  const alertDesc = P.policy === 'rl' ? `AI Agent (PPO Policy), reported at ${P.detectMin} min` :
+    (P.alertAll ? `Everyone at once, reported at ${P.detectMin} min, ${P.lagMin} min to issue` : `Zones within ${P.trigKm} km, reported at ${P.detectMin} min, ${P.lagMin} min to issue`);
   return {
     cond:`${wind} ${P.windKmh} km/h, ${P.night?'2 a.m.':'afternoon'}`,
-    alert: P.alertAll ? `Everyone at once, reported at ${P.detectMin} min, ${P.lagMin} min to issue` : `Zones within ${P.trigKm} km, reported at ${P.detectMin} min, ${P.lagMin} min to issue`,
+    alert: alertDesc,
     beh: (P.mode==='rules'?'Wait for the order':'Read the neighborhood') + (P.contraflow?', contraflow':'')
   };
 }
@@ -526,8 +531,9 @@ $('randIgn').onclick=()=>{ P.ign=S.randomIgnition(world,Math.random); P.seed=(Ma
 $('det').oninput=e=>{ P.detectMin=+e.target.value; $('detOut').textContent=P.detectMin+' min'; }; $('det').onchange=changed;
 $('trig').oninput=e=>{ P.trigKm=+e.target.value; $('trigOut').textContent=P.trigKm+' km'; }; $('trig').onchange=changed;
 $('lag').oninput=e=>{ P.lagMin=+e.target.value; $('lagOut').textContent=P.lagMin+' min'; }; $('lag').onchange=changed;
-$('polTrig').onclick=()=>{ P.alertAll=false; setPressed('polTrig','polAll'); $('trig').disabled=false; changed(); };
-$('polAll').onclick=()=>{ P.alertAll=true; setPressed('polAll','polTrig'); $('trig').disabled=true; changed(); };
+$('polTrig').onclick=()=>{ P.policy='trig'; P.alertAll=false; $('polTrig').setAttribute('aria-pressed','true'); $('polAll').setAttribute('aria-pressed','false'); $('polRL').setAttribute('aria-pressed','false'); $('trig').disabled=false; changed(); };
+$('polAll').onclick=()=>{ P.policy='all'; P.alertAll=true; $('polAll').setAttribute('aria-pressed','true'); $('polTrig').setAttribute('aria-pressed','false'); $('polRL').setAttribute('aria-pressed','false'); $('trig').disabled=true; changed(); };
+$('polRL').onclick=()=>{ P.policy='rl'; P.alertAll=false; $('polRL').setAttribute('aria-pressed','true'); $('polTrig').setAttribute('aria-pressed','false'); $('polAll').setAttribute('aria-pressed','false'); $('trig').disabled=true; changed(); };
 const notes={ rules:'Households leave when they get the official order or see flames nearby, and take the fastest open route.',
   adaptive:'Households also react to smoke and to neighbors leaving, and steer around congestion and fire. Watch for shadow evacuation from zones that were never ordered out.' };
 $('mRules').onclick=()=>{ P.mode='rules'; setPressed('mRules','mAdapt'); $('modeNote').textContent=notes.rules; changed(); };

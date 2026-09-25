@@ -342,19 +342,42 @@ const Sim = (function () {
 
     // alerts
     const detT = Math.round(p.detectMin * 60 / DT);
-    if (t >= detT && t % 3 === 0) {
-      for (let z = 0; z < ZONES.length; z++) {
-        if (R.zoneTrig[z] < 0) {
-          let trig = p.alertAll;
-          if (!trig) {
-            let md = 999; for (const b of Wd.zoneBlocks[z]) md = Math.min(md, R.fireDist[b]);
-            trig = md * BS * CELL <= p.trigKm * 1000;
-          }
-          if (trig) { R.zoneTrig[z] = t; R.zoneAlert[z] = t + Math.round(p.lagMin * 60 / DT); }
+    if (t >= detT) {
+      if (p.policy === 'rl' && typeof RLPolicy !== 'undefined' && (t % 30 === 0 || t === detT)) {
+        const obs = new Float32Array(RLPolicy.obs_dim);
+        for (let z = 0; z < ZONES.length && z * 5 + 4 < RLPolicy.obs_dim; z++) {
+          let md = 999; for (const b of Wd.zoneBlocks[z]) md = Math.min(md, R.fireDist[b]);
+          obs[z * 5] = Math.min(1.0, (md * BS * CELL) / 10000.0);
+          obs[z * 5 + 1] = R.zoneTrig[z] >= 0 ? 1.0 : 0.0;
         }
-        if (R.zoneAlert[z] >= 0 && t === R.zoneAlert[z]) {
-          R.alertLog.push({ zone: ZONES[z].id, t });
-          for (const h of Wd.homes) if (h.zone === z && R.getsAlert[h.id]) makeAware(R, h.id, false, 1);
+        const probs = RLPolicy.predict(obs);
+        for (let z = 0; z < ZONES.length && z < probs.length - 1; z++) {
+          if (probs[z] > 0.5 && R.zoneTrig[z] < 0) {
+            R.zoneTrig[z] = t;
+            R.zoneAlert[z] = t + Math.round(p.lagMin * 60 / DT);
+          }
+        }
+        if (probs[probs.length - 1] > 0.5 && !p.contraflow) {
+          p.contraflow = true;
+          for (const e of Wd.edges) {
+            if (e.type === 'art' || e.type === 'hwy') R.ecap[e.id] = Math.min(8, e.lanes * 2 * 3.0);
+          }
+        }
+      }
+      if (t % 3 === 0) {
+        for (let z = 0; z < ZONES.length; z++) {
+          if (R.zoneTrig[z] < 0 && p.policy !== 'rl') {
+            let trig = p.alertAll;
+            if (!trig) {
+              let md = 999; for (const b of Wd.zoneBlocks[z]) md = Math.min(md, R.fireDist[b]);
+              trig = md * BS * CELL <= p.trigKm * 1000;
+            }
+            if (trig) { R.zoneTrig[z] = t; R.zoneAlert[z] = t + Math.round(p.lagMin * 60 / DT); }
+          }
+          if (R.zoneAlert[z] >= 0 && t === R.zoneAlert[z]) {
+            R.alertLog.push({ zone: ZONES[z].id, t });
+            for (const h of Wd.homes) if (h.zone === z && R.getsAlert[h.id]) makeAware(R, h.id, false, 1);
+          }
         }
       }
     }
