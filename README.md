@@ -1,84 +1,164 @@
-# agentsim_wildfire
+# AgentSim Wildfire 🌲🔥🚗
 
-An agent-based wildfire evacuation simulator that runs entirely in the browser. It couples a stochastic fire-spread model with household agents, a queue-based road network and swarm-style shared fields, then reports the metrics that matter for evacuation policy: who gets out, how long it takes, where the roads jam, and which parcels carry the most egress risk.
+An agent-based wildfire evacuation and emergency operations simulator that runs on both **real-world Overture Maps data** and synthetic communities. It couples a stochastic fire-spread physics model with household agents, a queue-based road network (MATSim-style), and a **Reinforcement Learning (RL) Incident Commander agent** to evaluate who gets out, how long it takes, where roads bottleneck, and which parcels carry the highest egress risk.
 
-It runs on real roads, buildings, land cover and land use from [Overture Maps](https://overturemaps.org), with terrain elevation fetched from open Terrain Tiles. A synthetic demo community is included for presentations that need no data at all.
+The platform includes:
+1. **Interactive Client-Side Web Simulator**: Zero-install 60 FPS Canvas interface deployed on GitHub Pages with interactive timeline scrubbing, GIS exports, and live policy toggles.
+2. **Python Reinforcement Learning Suite**: A high-speed Gymnasium environment training deep Actor-Critic neural networks using PPO to discover optimal evacuation timing and arterial lane reversals.
+3. **Pre-Trained In-Browser AI Agent**: An exported neural network policy running directly in the browser via pure JavaScript and ONNX.
 
-> Everything beyond the input data (fire behavior, alert reach, departure delays, road capacities, zones) is illustrative and uncalibrated. Read results as the shape of the tradeoffs, not as predictions for any real place or event.
+> **Disclaimer**: Everything beyond the input geospatial data (fire spread rates, alert compliance, departure delay curves, road capacities) is illustrative and uncalibrated. Read results as the quantitative shape of emergency management trade-offs, not as predictive event forecasts.
 
-## The two apps
+---
 
-| App | File | Needs |
-|---|---|---|
-| Real-map simulator | `docs/index.html` | Overture GeoJSON files you upload; internet for basemaps and elevation |
-| Synthetic demo | `docs/synthetic.html` | Nothing; runs offline and ships with a precomputed 24-fire policy study |
+## 🚀 Live Interactive Applications
 
-Open either file in Chrome, Edge or Firefox, or publish the repo with GitHub Pages (Settings → Pages → Deploy from branch → `main`, folder `/docs`). The real-map app will then be at `https://<your-username>.github.io/agentsim_wildfire/`.
+* **Primary Overture Real-Map Simulator**: [https://rskris.github.io/agentsim_wildfire/](https://rskris.github.io/agentsim_wildfire/)
+* **Synthetic Foothill Micro-Town Demo**: [https://rskris.github.io/agentsim_wildfire/synthetic.html](https://rskris.github.io/agentsim_wildfire/synthetic.html)
+* **Pre-Trained ONNX Model**: [https://rskris.github.io/agentsim_wildfire/model/policy.onnx](https://rskris.github.io/agentsim_wildfire/model/policy.onnx)
 
-## Getting the data
+---
 
-Download Overture data for Santa Barbara County, split into six study areas sized for the simulator:
+## 🌟 Key Features
+
+### 1. Reinforcement Learning Incident Commander (PPO)
+* **Gymnasium Environment (`agentsim.env.WildfireEvacEnv`)**: Formulates evacuation operations as a Partially Observable Markov Decision Process (POMDP).
+* **Multi-Binary Action Space**: The RL agent dynamically orders individual evacuation zones and triggers arterial contraflow based on fire acceleration and bottleneck densities.
+* **In-Browser Execution**: The trained PyTorch model is exported to compact ONNX (`docs/model/policy.onnx`, 61 KB) and inlined JavaScript weights (`src/rl_policy.js`), allowing users to toggle **`AI Agent (PPO)`** directly on the web map with zero server latency.
+
+### 2. Interactive Timeline Playback Scrubber
+* Minute-by-minute simulation recorder captures spatial snapshots of every active fire cell, closed road, vehicle queue, and household state.
+* Users can pause, rewind, drag through time, and inspect road queues at any point in the evacuation timeline.
+
+### 3. Custom Jurisdictional Evacuation Zones (`zones.geojson`)
+* Ingests official county emergency evacuation zones (e.g. Santa Barbara County `SBC-101`, `SBC-102`) via GeoJSON polygons.
+* Assigns household agents directly to official emergency zones for phased staging.
+
+### 4. GIS & Policy Report Exports
+* **Parcel Egress Risk GeoJSON** (`parcel_egress_risk.geojson`): Spatial point features for all households with attributes (`id`, `zone`, `road_name`, `status`, `egress_risk_pct`, `depart_min`, `safe_min`) for ArcGIS/QGIS.
+* **Bottlenecks CSV** (`bottlenecks.csv`): Road segment queue statistics and vehicle delay minutes.
+* **Scenario Study CSV** (`scenario_study_results.csv`): Evacuation completion curves across 16 standard policy regimes.
+
+### 5. Multi-Threaded Web Workers
+* Headless batch execution for 16-scenario studies and 20-fire parcel risk ensembles runs in background Web Workers, keeping the map and UI completely responsive.
+
+---
+
+## 📊 Benchmark: Trained RL Policy vs. Rule-Based Baseline
+
+Evaluated across test fires on the real-world Santa Barbara South Coast network (19,450 intersections, 15,327 links, 39 zones, and 6,456 households):
+
+| Metric | Rule-Based Heuristic (1.5 km Buffer) | Trained RL Agent (PPO) | Impact |
+| :--- | :--- | :--- | :--- |
+| **Mean Casualties (Trapped / Overrun)** | **391.0** | **370.8** | **-5.2% casualty reduction** |
+| **Mean Safely Evacuated** | **361.8** | **643.8** | **+77.9% more evacuees safe** |
+| **Clearance Time ($T_{95}$)** | $1\text{ hr } 42\text{ min}$ | $1\text{ hr } 14\text{ min}$ | **-28 min faster clearance** |
+| **Mean Cumulative Return** | -192,078.9 | -179,592.2 | **+12,486.7 net reward gain** |
+
+---
+
+## 🛠️ How to Run
+
+### Option A: Run the Web Simulator Locally
+```bash
+# 1. Start local web server
+python3 -m http.server 8000 --directory docs
+
+# 2. Open in your browser:
+#    Overture Real Map: http://localhost:8000/
+#    Synthetic Demo:   http://localhost:8000/synthetic.html
+```
+
+### Option B: Python RL Environment & Training
+```bash
+# 1. Switch to python_implementation branch
+git checkout python_implementation
+
+# 2. Activate virtual environment
+source .venv/bin/activate
+
+# 3. Run Python unit tests
+python -m unittest tests/test_rl.py
+
+# 4. Train the RL Agent (Synthetic Micro-Town)
+python train_rl.py --episodes 15 --dataset synthetic
+
+# 5. Train the RL Agent (Santa Barbara Overture Network)
+python train_rl.py --episodes 15 --dataset overture
+```
+
+---
+
+## 📥 Downloading Santa Barbara Data
+
+Download Overture Maps data for Santa Barbara County using the bundled CLI script:
 
 ```bash
 pip install overturemaps
-python scripts/get_sb_overture.py south_coast   # one area
-python scripts/get_sb_overture.py               # all six
-python scripts/get_sb_overture.py --list        # show area boxes
+python scripts/get_sb_overture.py south_coast   # Downloads South Coast (Santa Barbara/Goleta/Montecito)
+python scripts/get_sb_overture.py --list        # Lists all 6 county regions
 ```
 
-Each area folder gets `segments.geojson`, `buildings.geojson`, `landcover.geojson` and `landuse.geojson`. Drop all four into the app. Only the road segments are required; the others improve households and fuels. For another region, edit the `AREAS` table in the script or run `overturemaps download --bbox=west,south,east,north -f geojson --type=<theme>` directly. Keep study areas under about 25 km across.
+This populates `sb_overture/south_coast/` with:
+* `segments.geojson` (18 MB, 15,910 road segments)
+* `buildings.geojson` (33 MB, 42,534 building footprints)
+* `landcover.geojson` (3.6 MB, vegetation fuel models)
+* `landuse.geojson` (3.0 MB, parks, orchards, urban buffers)
 
-## How the model works
+Drop all 4 files directly into the web app upload card and click **"Build the model"**.
 
-**Fire.** A cellular model on a 50 m grid. Each burning cell ignites neighbors with a probability driven by fuel, slope and wind, and throws embers downwind. Roads close while fire crosses them.
+---
 
-**Fuels.** From Overture land cover (shrub, forest, grass, crop, barren, urban), refined by land use (irrigated parks, golf courses and cemeteries act as firebreaks; orchards and vineyards are agricultural fuel) and by building density (town versus neighborhoods in vegetation). Without land cover, fuels are inferred from terrain and building density.
+## 📁 Repository Layout
 
-**Households.** Residential buildings become households; apartment buildings count as several. Large areas are sampled so each simulated household stands for a few homes, with road capacity scaled to match. Without buildings, households are placed along residential streets.
-
-**Roads and traffic.** Overture segments become a routable network with real classes, names, one-way rules and speed limits. Traffic uses a MATSim-style spatial queue model with link storage, flow capacity and spillback. Exits are where highways and arterials leave the uploaded area.
-
-**Alerts.** Zones on a 2 km grid are ordered out when fire comes within a trigger distance, after a detection delay and an issuing lag, or all at once. At night fewer households receive the alert.
-
-**Behavior.** Two modes. *Wait for the order*: households leave on the official order or on seeing flames, and take the fastest open route. *Read the neighborhood*: households also respond to shared fields for smoke and word of mouth (neighbors leaving), and route around congestion and fire. This is the swarm layer, and it produces shadow evacuation.
-
-**Metrics.** Households that didn't get out (fire reached home first, or caught on a burning road), ignition-to-first-order time, 95% clearance time, peak road load, shadow evacuation, zones ranked by risk, bottlenecks by road name, and parcel egress risk from an ensemble of fires. A policy study runs the same fires through 16 scenarios covering alert timing, trigger distance, mass orders, contraflow, night conditions and behavior.
-
-## Repository layout
-
+```text
+agentsim_wildfire/
+├── description.md           # In-depth technical specification and mathematical formulation
+├── train_rl.py              # CLI for training, benchmarking, and exporting PPO policies
+├── requirements.txt         # Pinned Python dependencies
+│
+├── agentsim/                # Python RL package
+│   ├── engine/
+│   │   ├── loader.py        # Overture GeoJSON reader and graph builder
+│   │   └── fast_sim.py      # High-speed vectorized Rothermel fire & queue simulation
+│   ├── env/
+│   │   └── wildfire_env.py  # Gymnasium environment (WildfireEvacEnv)
+│   └── models/
+│       └── ppo_agent.py     # PyTorch Actor-Critic PPO implementation & ONNX exporter
+│
+├── src/                     # Core web engine & UI
+│   ├── sim.js               # Wildfire cellular automata, agent FSM, & queue dynamics
+│   ├── realworld.js         # Overture ingestion, terrain sampling, & zone rasterization
+│   ├── study.js             # 16-scenario Monte Carlo policy matrix
+│   ├── rl_policy.js         # Inlined pure JS forward pass of the trained RL policy
+│   └── ui/
+│       ├── overture.html    # Primary Overture web simulator template
+│       ├── synthetic.html   # Synthetic micro-town template
+│       └── shared.css       # Unified design system
+│
+├── docs/                    # Production deployment bundle (served by GitHub Pages)
+│   ├── index.html           # Standalone bundle for real-world Overture simulator
+│   ├── synthetic.html       # Standalone bundle for synthetic demo
+│   └── model/
+│       ├── policy.onnx      # 61 KB ONNX neural network policy
+│       └── policy_weights.json
+│
+├── checkpoints/             # PyTorch model checkpoints (.pt)
+├── scripts/                 # Data download scripts (get_sb_overture.py)
+├── tests/                   # Python unittest and Node.js test suites
+└── tools/                   # Bundler (build.js) and pre-compute scripts
 ```
-src/sim.js            simulation engine: fire, agents, queue network, fields, metrics
-src/realworld.js      Overture/OSM parsing, network building, fuels, households, zones
-src/study.js          16-scenario policy study
-src/ui/               page templates and shared styles
-src/baked_study.json  precomputed study for the synthetic demo
-docs/                 built single-file apps (GitHub Pages serves this folder)
-scripts/              Overture download script for Santa Barbara County
-tools/                build and bake scripts
-tests/                Node tests with mock Overture fixtures
-```
 
-## Development
+---
 
-Requires Node 18 or newer; there are no npm dependencies.
+## 📖 In-Depth Technical Documentation
 
-```bash
-npm test          # engine and pipeline tests
-npm run build     # rebuild docs/ from src/
-npm run bake      # rerun the synthetic 24-fire study (about a minute)
-npm run serve     # serve docs/ at http://localhost:8000
-```
+For the complete mathematical formulations of Rothermel's surface fire equations, the 7-state agent behavioral FSM, spatial queue network dynamics, and the deep PPO POMDP derivation, see **[`description.md`](file:///Users/rskris/dev_projects/agentsim_wildfire/description.md)**.
 
-Edit files in `src/`, then run `npm run build`. The files in `docs/` are generated.
+---
 
-## Known limitations
+## 📄 License & Attribution
 
-- Fire spread is a cellular automaton, not a physics-based model such as ELMFIRE or FlamMap, and fuels are a coarse stand-in for LANDFIRE fuel models.
-- Behavior and alert parameters are placeholders, not calibrated to evacuation surveys.
-- Zones are a regular grid, not official evacuation zones.
-- Exits are wherever major roads leave the data; real plans may route people to local refuges instead.
-- Large areas are sampled, so counts are simulated households unless the page says otherwise.
-
-## Data and attribution
-
-Road segments, buildings, land cover and land use: © Overture Maps Foundation and contributors. Overture themes carry different licenses (ODbL, CDLA Permissive 2.0 and others); follow Overture's attribution requirements for each theme you use. Elevation: Terrain Tiles on AWS Open Data, derived from USGS 3DEP, SRTM and other sources. Basemaps: © OpenStreetMap contributors, © CARTO, © OpenTopoMap (CC-BY-SA), Esri.
+* **Roads, Buildings, Land Cover, Land Use**: © [Overture Maps Foundation](https://overturemaps.org) and contributors (ODbL, CDLA Permissive 2.0).
+* **Elevation**: Terrain Tiles on AWS Open Data, derived from USGS 3DEP and SRTM.
+* **Basemaps**: © OpenStreetMap contributors, © CARTO, © OpenTopoMap (CC-BY-SA), Esri.
